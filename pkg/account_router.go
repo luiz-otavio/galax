@@ -2,7 +2,7 @@ package galax
 
 import (
 	"fmt"
-	"time"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -116,9 +116,7 @@ func (router UserRouter) UpdateName(ctx *fiber.Ctx) error {
 	account.Name = username
 
 	Do(func(d *gorm.DB) {
-		if err := d.Save(&account).Error; err != nil {
-			println("Could not update account.", err.Error())
-		}
+		d.Save(&account)
 	})
 
 	router.cache.UpdateName(uniqueId.String(), username)
@@ -152,9 +150,7 @@ func (router UserRouter) UpdateCash(ctx *fiber.Ctx) error {
 	account.Cash = int32(cash)
 
 	Do(func(d *gorm.DB) {
-		if err := d.Save(&account).Error; err != nil {
-			println("Could not update account.", err.Error())
-		}
+		d.Save(&account)
 	})
 
 	router.cache.UpdateCash(uniqueId.String(), account.Cash)
@@ -214,9 +210,7 @@ func (router UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 	account.MetadataSet = metadata
 
 	Do(func(d *gorm.DB) {
-		if err := d.Save(&account).Error; err != nil {
-			println("Could not update account.", err.Error())
-		}
+		d.Save(&account)
 	})
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -247,13 +241,7 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 		})
 	}
 
-	var account Account
-
-	if err := router.db.Where("unique_id = ?", uniqueId).First(&account).Error; err != nil {
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Account not found.",
-		})
-	}
+	account := loadAccount(uniqueId, router)
 
 	groups := account.GroupSet
 
@@ -262,6 +250,10 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"message": "Group set is not valid.",
 			})
+		}
+
+		if hasGroup(account, key) {
+			continue
 		}
 
 		info, ok := group.(map[string]interface{})
@@ -280,8 +272,8 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 			})
 		}
 
-		expireAt := int64(info["expire_at"].(float64))
-		createdAt := int64(info["created_at"].(float64))
+		expireAt, _ := strconv.ParseInt(fmt.Sprint(info["expire_at"]), 10, 64)
+		createdAt, _ := strconv.ParseInt(fmt.Sprint(info["created_at"]), 10, 64)
 
 		if expireAt < createdAt {
 			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -299,8 +291,8 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 
 		groupInfo := GroupInfo{
 			ExpiredTimestamp: ExpiredTimestamp{
-				ExpireAt:  time.UnixMilli(expireAt),
-				CreatedAt: time.UnixMilli(createdAt),
+				ExpireAt:  expireAt,
+				CreatedAt: createdAt,
 			},
 
 			User:   account.UniqueId,
@@ -382,6 +374,10 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 			})
 		}
 
+		if !hasGroup(account, key) {
+			continue
+		}
+
 		for i, group := range groups {
 			if group.Group == key {
 				groups = append(groups[:i], groups[i+1:]...)
@@ -393,9 +389,7 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 	account.GroupSet = groups
 
 	Do(func(d *gorm.DB) {
-		if err := d.Save(&account).Error; err != nil {
-			println("Could not update account.", err.Error())
-		}
+		d.Save(&account)
 	})
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -486,4 +480,14 @@ func loadAccount(uuid uuid.UUID, router UserRouter) *Account {
 	router.cache.SaveAccount(uuid.String(), account)
 
 	return account
+}
+
+func hasGroup(account *Account, group string) bool {
+	for _, g := range account.GroupSet {
+		if g.Group == group {
+			return true
+		}
+	}
+
+	return false
 }
