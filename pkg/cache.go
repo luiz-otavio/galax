@@ -20,6 +20,12 @@ const (
 	ACCOUNT_EXPIRE_TIME = 300 * time.Second
 )
 
+func NewCache(redis *redis.Client) *RedisCache {
+	return &RedisCache{
+		redis: redis,
+	}
+}
+
 func (cache *RedisCache) DeleteAccount(account *Account) {
 	client := cache.redis
 
@@ -108,14 +114,14 @@ func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
 		UniqueId: uuid,
 		Name:     result["name"],
 
-		Cash: uint16(cash),
+		Cash: int32(cash),
 
 		MetadataSet: metadataSet,
 		GroupSet:    groupSet,
 	}
 }
 
-func (cache *RedisCache) UpdateCash(id string, cash uint16) {
+func (cache *RedisCache) UpdateCash(id string, cash int32) {
 	cache.redis.HSet(context.Background(), ACCOUNT_HASH_KEY+"-"+id, "cash", cash).Result()
 }
 

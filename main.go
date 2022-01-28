@@ -1,9 +1,10 @@
-package galax
+package main
 
 import (
 	"fmt"
 	"os"
 
+	galax "github.com/Rede-Legit/galax/pkg"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -14,10 +15,10 @@ var (
 )
 
 func main() {
-	connector := NewConnector(DSN_MARIADB)
-	client := NewRedis(DSN_REDIS)
+	connector := galax.NewConnector(DSN_MARIADB)
+	client := galax.NewRedis(DSN_REDIS)
 
-	connector.db.AutoMigrate(&Account{})
+	connector.Database.AutoMigrate(&galax.Account{})
 
 	app := fiber.New(fiber.Config{
 		CaseSensitive:     true,
@@ -25,9 +26,8 @@ func main() {
 		AppName:           "galax",
 	})
 
-	cache := &RedisCache{redis: client}
-
-	router := UserRouter{db: connector.db, cache: cache}
+	cache := galax.NewCache(client)
+	router := galax.NewRouter(connector.Database, cache)
 
 	app.Put("/account/create", router.CreateAccount)
 	app.Get("/account/search", router.SearchAccount)
@@ -36,6 +36,7 @@ func main() {
 	app.Post("/account/group/insert", router.InsertGroup)
 	app.Patch("/account/name", router.UpdateName)
 	app.Patch("/account/cash/update", router.UpdateCash)
+	app.Patch("/account/cash/sum", router.SumCash)
 
 	app.Listen(":8080")
 }

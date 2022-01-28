@@ -40,7 +40,7 @@ type Account struct {
 	UniqueId uuid.UUID `json:"uniqueId"`
 
 	Name string `json:"name"`
-	Cash uint16 `json:"cash"`
+	Cash int32  `json:"cash"`
 
 	GroupSet    GroupSet    `json:"group_set"`
 	MetadataSet MetadataSet `json:"metadata_set"`

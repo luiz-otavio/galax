@@ -6,7 +6,7 @@ import (
 )
 
 type DBConnector struct {
-	db *gorm.DB
+	Database *gorm.DB
 }
 
 func NewConnector(dsn string) *DBConnector {
@@ -28,5 +28,5 @@ func NewConnector(dsn string) *DBConnector {
 		panic("Could not connect to database")
 	}
 
-	return &DBConnector{db: db}
+	return &DBConnector{Database: db}
 }

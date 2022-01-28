@@ -13,6 +13,13 @@ type UserRouter struct {
 	cache *RedisCache
 }
 
+func NewRouter(db *gorm.DB, cache *RedisCache) *UserRouter {
+	return &UserRouter{
+		db:    db,
+		cache: cache,
+	}
+}
+
 func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 	body := map[string]interface{}{}
 
@@ -130,7 +137,7 @@ func (router UserRouter) UpdateCash(ctx *fiber.Ctx) error {
 
 	account := loadAccount(uniqueId, router)
 
-	account.Cash = uint16(cash)
+	account.Cash = int32(cash)
 
 	Do(func(d *gorm.DB) {
 		if err := d.Save(&account).Error; err != nil {
@@ -356,6 +363,50 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 	}
 
 	account.GroupSet = groups
+
+	Do(func(d *gorm.DB) {
+		if err := d.Save(&account).Error; err != nil {
+			println("Could not update account.", err.Error())
+		}
+	})
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Account updated.",
+	})
+}
+
+func (router UserRouter) SumCash(ctx *fiber.Ctx) error {
+	uniqueId, err := queryUUID(ctx)
+
+	if uniqueId == uuid.Nil {
+		return err
+	}
+
+	var body map[string]interface{}
+
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Body is required.",
+		})
+	}
+
+	cash, ok := body["cash"].(float64)
+
+	if !ok {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Cash is required.",
+		})
+	}
+
+	account := loadAccount(uniqueId, router)
+
+	account.Cash += int32(cash)
+
+	if account.Cash < 0 {
+		account.Cash = 0
+	}
+
+	router.cache.UpdateCash(uniqueId.String(), account.Cash)
 
 	Do(func(d *gorm.DB) {
 		if err := d.Save(&account).Error; err != nil {
