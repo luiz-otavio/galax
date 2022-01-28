@@ -68,8 +68,8 @@ func (cache *RedisCache) SaveAccount(id string, account *Account) {
 
 		client.HMSet(context, groupKey+"-"+group.Group, map[string]interface{}{
 			"author":    group.Author.String(),
-			"createdAt": group.CreatedAt.Unix(),
-			"expireAt":  group.ExpireAt.Unix(),
+			"createdAt": group.CreatedAt,
+			"expireAt":  group.ExpireAt,
 		})
 	}
 }
@@ -107,7 +107,7 @@ func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
 			panic(err)
 		}
 
-		groupSet = append(groupSet, ReadInfo(uuid, hash))
+		groupSet = append(groupSet, ReadInfo(uuid, key, hash))
 	}
 
 	return &Account{
@@ -138,8 +138,8 @@ func (cache *RedisCache) InsertGroup(id string, value GroupInfo) {
 
 	client.HMSet(context, ACCOUNT_HASH_KEY+"-"+id+"-groups-"+value.Group, map[string]interface{}{
 		"author":    value.Author.String(),
-		"createdAt": value.CreatedAt.Unix(),
-		"expireAt":  value.ExpireAt.Unix(),
+		"createdAt": value.CreatedAt,
+		"expireAt":  value.ExpireAt,
 	})
 }
 

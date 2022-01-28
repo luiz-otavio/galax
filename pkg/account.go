@@ -27,8 +27,8 @@ func New(uniqueId uuid.UUID, name string) *Account {
 		GroupSet: []GroupInfo{
 			{
 				ExpiredTimestamp: ExpiredTimestamp{
-					ExpireAt:  time.Now(),
-					CreatedAt: time.Now(),
+					ExpireAt:  time.Now().Unix(),
+					CreatedAt: time.Now().Unix(),
 				},
 
 				User:   uniqueId,
@@ -41,13 +41,13 @@ func New(uniqueId uuid.UUID, name string) *Account {
 }
 
 type Timestamp struct {
-	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at;type:timestamp;not null"`
-	CreatedAt time.Time `json:"created_at" gorm:"column:created_at;type:timestamp;not null"`
+	UpdatedAt int64 `json:"updated_at" gorm:"column:updated_at;type:bigint;not null"`
+	CreatedAt int64 `json:"created_at" gorm:"column:created_at;type:bigint;not null"`
 }
 
 type ExpiredTimestamp struct {
-	ExpireAt  time.Time `json:"expire_at" gorm:"column:expire_at;type:timestamp;not null"`
-	CreatedAt time.Time `json:"created_at" gorm:"column:created_at;type:timestamp;not null"`
+	ExpireAt  int64 `json:"expire_at" gorm:"column:expire_at;type:bigint;not null"`
+	CreatedAt int64 `json:"created_at" gorm:"column:created_at;type:bigint;not null"`
 }
 
 type Account struct {
@@ -134,17 +134,17 @@ func (metadataSet *MetadataSet) Write(target string, value interface{}) bool {
 	}
 }
 
-func ReadInfo(id uuid.UUID, data map[string]string) GroupInfo {
+func ReadInfo(id uuid.UUID, group string, data map[string]string) GroupInfo {
 	updatedAt, _ := strconv.ParseInt(data["createdAt"], 10, 64)
 	expireAt, _ := strconv.ParseInt(data["expireAt"], 10, 64)
 
 	return GroupInfo{
 		ExpiredTimestamp: ExpiredTimestamp{
-			CreatedAt: time.Unix(updatedAt, 0),
-			ExpireAt:  time.Unix(expireAt, 0),
+			CreatedAt: updatedAt,
+			ExpireAt:  expireAt,
 		},
 		User:   id,
-		Group:  data["group"],
+		Group:  group,
 		Author: uuid.MustParse(data["author"]),
 	}
 }
