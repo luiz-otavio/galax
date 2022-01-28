@@ -32,6 +32,8 @@ func Initialize(db *gorm.DB) DBWorker {
 				f := e.Value.(func(*gorm.DB))
 				f(worker.db)
 			}
+
+			worker.db.Commit()
 		}
 	}()
 
