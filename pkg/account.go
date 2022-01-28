@@ -3,6 +3,7 @@ package galax
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -13,6 +14,7 @@ func New(uniqueId uuid.UUID, name string) *Account {
 		Name:     name,
 
 		MetadataSet: MetadataSet{
+			User:               uniqueId,
 			Skin:               "",
 			Name:               "",
 			CurrentGroup:       "NORMAL",
@@ -21,29 +23,41 @@ func New(uniqueId uuid.UUID, name string) *Account {
 			ENABLE_PUBLIC_TELL: true,
 			STAFF_SCOREBOARD:   false,
 		},
-		GroupSet: make(map[string]GroupInfo),
-		Cash:     0,
+
+		GroupSet: []GroupInfo{
+			{
+				ExpiredTimestamp: ExpiredTimestamp{
+					ExpireAt:  time.Now(),
+					CreatedAt: time.Now(),
+				},
+
+				User:   uniqueId,
+				Group:  "NORMAL",
+				Author: uniqueId,
+			},
+		},
+		Cash: 0,
 	}
 }
 
 type Timestamp struct {
-	UpdatedAt int64 `json:"updated_at"`
-	CreatedAt int64 `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at;type:timestamp;not null"`
+	CreatedAt time.Time `json:"created_at" gorm:"column:created_at;type:timestamp;not null"`
 }
 
 type ExpiredTimestamp struct {
-	ExpireAt  int64 `json:"expire_at"`
-	CreatedAt int64 `json:"created_at"`
+	ExpireAt  time.Time `json:"expire_at" gorm:"column:expire_at;type:timestamp;not null"`
+	CreatedAt time.Time `json:"created_at" gorm:"column:created_at;type:timestamp;not null"`
 }
 
 type Account struct {
-	UniqueId uuid.UUID `json:"uniqueId"`
+	UniqueId uuid.UUID `json:"uniqueId" gorm:"primary_key;type:char(36);not null"`
 
-	Name string `json:"name"`
-	Cash int32  `json:"cash"`
+	Name string `json:"name" gorm:"type:varchar(16);not null;column:username"`
+	Cash int32  `json:"cash" gorm:"type:bigint;not null;default:0"`
 
-	GroupSet    GroupSet    `json:"group_set"`
-	MetadataSet MetadataSet `json:"metadata_set"`
+	GroupSet    []GroupInfo `json:"group_set" gorm:"foreignkey:User;references:UniqueId"`
+	MetadataSet MetadataSet `json:"metadata_set" gorm:"foreignkey:User;references:UniqueId"`
 }
 
 var AVAILABLE_GROUPS = []string{
@@ -64,22 +78,25 @@ var AVAILABLE_GROUPS = []string{
 }
 
 type MetadataSet struct {
-	Skin         string `json:"skin"`
-	Name         string `json:"name"`
-	Vanish       bool   `json:"vanish"`
-	CurrentGroup string `json:"currentGroup"`
+	User uuid.UUID `json:"-" gorm:"column:user;type:char(36);not null"`
 
-	SEE_ALL_PLAYERS    bool `json:"seeAllPlayers"`
-	ENABLE_PUBLIC_TELL bool `json:"enablePublicTell"`
-	STAFF_SCOREBOARD   bool `json:"staffScoreboard"`
+	Skin         string `json:"skin" gorm:"column:skin;type:varchar(16);not null"`
+	Name         string `json:"name" gorm:"column:name;type:varchar(16);not null"`
+	Vanish       bool   `json:"vanish" gorm:"column:vanish;type:boolean;not null"`
+	CurrentGroup string `json:"currentGroup" gorm:"column:current_group;type:varchar(18);not null"`
+
+	SEE_ALL_PLAYERS    bool `json:"seeAllPlayers" gorm:"column:see_all_players;type:boolean;not null"`
+	ENABLE_PUBLIC_TELL bool `json:"enablePublicTell" gorm:"column:enable_public_tell;type:boolean;not null"`
+	STAFF_SCOREBOARD   bool `json:"staffScoreboard" gorm:"column:staff_scoreboard;type:boolean;not null"`
 }
-
-type GroupSet = map[string]GroupInfo
 
 type GroupInfo struct {
 	ExpiredTimestamp
 
-	Author string `json:"author"`
+	User uuid.UUID `json:"-" gorm:"column:user;type:char(36);not null"`
+
+	Group  string    `json:"group" gorm:"column:group;type:varchar(18);not null;"`
+	Author uuid.UUID `json:"author" gorm:"column:author;type:char(36);not null"`
 }
 
 func IsGroup(target string) bool {
@@ -117,16 +134,18 @@ func (metadataSet *MetadataSet) Write(target string, value interface{}) bool {
 	}
 }
 
-func Read(data map[string]string) GroupInfo {
+func ReadInfo(id uuid.UUID, data map[string]string) GroupInfo {
 	updatedAt, _ := strconv.ParseInt(data["createdAt"], 10, 64)
 	expireAt, _ := strconv.ParseInt(data["expireAt"], 10, 64)
 
 	return GroupInfo{
 		ExpiredTimestamp: ExpiredTimestamp{
-			CreatedAt: updatedAt,
-			ExpireAt:  expireAt,
+			CreatedAt: time.Unix(updatedAt, 0),
+			ExpireAt:  time.Unix(expireAt, 0),
 		},
-		Author: data["author"],
+		User:   id,
+		Group:  data["group"],
+		Author: uuid.MustParse(data["author"]),
 	}
 }
 

@@ -2,10 +2,12 @@ package galax
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type UserRouter struct {
@@ -24,7 +26,9 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 	body := map[string]interface{}{}
 
 	if err := ctx.BodyParser(&body); err != nil {
-		return err
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Could not parse body.",
+		})
 	}
 
 	uniqueId := fmt.Sprint(body["uniqueId"])
@@ -37,7 +41,7 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 
 	var account Account
 
-	if err := router.db.Where("unique_id = ?", uniqueId).First(&account).Error; err != nil {
+	if err := router.db.Where("unique_id = ?", uniqueId).First(&account).Error; err == nil {
 		return ctx.Status(fiber.StatusMethodNotAllowed).JSON(fiber.Map{
 			"message": "Account already exists.",
 		})
@@ -54,6 +58,8 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 	account = *New(uuid, fmt.Sprint(body["name"]))
 
 	if err := router.db.Create(&account).Error; err != nil {
+		println("Could not create account.", err.Error())
+
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Could not create account.",
 		})
@@ -74,6 +80,12 @@ func (router UserRouter) SearchAccount(ctx *fiber.Ctx) error {
 	}
 
 	account := loadAccount(uniqueId, router)
+
+	if account == nil {
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "Account not found.",
+		})
+	}
 
 	return ctx.Status(fiber.StatusOK).JSON(account)
 }
@@ -277,17 +289,28 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 			})
 		}
 
-		groupInfo := GroupInfo{
-			ExpiredTimestamp: ExpiredTimestamp{
-				ExpireAt:  expireAt,
-				CreatedAt: createdAt,
-			},
-			Author: author,
+		uuid, err := uuid.Parse(author)
+
+		if err != nil {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Author is not valid.",
+			})
 		}
 
-		groups[key] = groupInfo
+		groupInfo := GroupInfo{
+			ExpiredTimestamp: ExpiredTimestamp{
+				ExpireAt:  time.UnixMilli(expireAt),
+				CreatedAt: time.UnixMilli(createdAt),
+			},
 
-		router.cache.InsertGroup(uniqueId.String(), key, groupInfo)
+			User:   account.UniqueId,
+			Group:  key,
+			Author: uuid,
+		}
+
+		groups = append(groups, groupInfo)
+
+		router.cache.InsertGroup(uniqueId.String(), groupInfo)
 	}
 
 	account.GroupSet = groups
@@ -359,7 +382,12 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 			})
 		}
 
-		delete(groups, key)
+		for i, group := range groups {
+			if group.Group == key {
+				groups = append(groups[:i], groups[i+1:]...)
+				break
+			}
+		}
 	}
 
 	account.GroupSet = groups
@@ -420,7 +448,7 @@ func (router UserRouter) SumCash(ctx *fiber.Ctx) error {
 }
 
 func queryUUID(ctx *fiber.Ctx) (uuid.UUID, error) {
-	id := ctx.Params("id")
+	id := ctx.Query("id")
 
 	if len(id) == 0 || len(id) < 32 {
 		return uuid.Nil, ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -446,8 +474,13 @@ func loadAccount(uuid uuid.UUID, router UserRouter) *Account {
 		return account
 	}
 
-	if err := router.db.Where("unique_id = ?", uuid).First(&account).Error; err != nil {
-		return nil
+	err := router.db.
+		Preload(clause.Associations).
+		Where("unique_id = ?", uuid).
+		First(&account).Error
+
+	if err != nil {
+		println("Could not load account.", err.Error())
 	}
 
 	router.cache.SaveAccount(uuid.String(), account)

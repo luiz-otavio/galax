@@ -63,13 +63,13 @@ func (cache *RedisCache) SaveAccount(id string, account *Account) {
 
 	groupKey := ACCOUNT_HASH_KEY + "-" + id + "-groups"
 
-	for key, group := range account.GroupSet {
-		client.SAdd(context, groupKey, key)
+	for _, group := range account.GroupSet {
+		client.SAdd(context, groupKey, group.Group)
 
-		client.HMSet(context, groupKey+"-"+key, map[string]interface{}{
-			"author":    group.Author,
-			"createdAt": group.CreatedAt,
-			"expireAt":  group.ExpireAt,
+		client.HMSet(context, groupKey+"-"+group.Group, map[string]interface{}{
+			"author":    group.Author.String(),
+			"createdAt": group.CreatedAt.Unix(),
+			"expireAt":  group.ExpireAt.Unix(),
 		})
 	}
 }
@@ -96,7 +96,7 @@ func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
 	groups, _ := client.SMembers(context, ACCOUNT_HASH_KEY+"-"+uniqueId+"-groups").Result()
 
 	metadataSet := MetadataSet{}
-	groupSet := GroupSet{}
+	groupSet := []GroupInfo{}
 
 	metadataSet.Read(metadatas)
 
@@ -107,7 +107,7 @@ func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
 			panic(err)
 		}
 
-		groupSet[key] = Read(hash)
+		groupSet = append(groupSet, ReadInfo(uuid, hash))
 	}
 
 	return &Account{
@@ -129,17 +129,17 @@ func (cache *RedisCache) UpdateMetadata(id string, key string, value string) {
 	cache.redis.HSet(context.Background(), ACCOUNT_HASH_KEY+"-"+id+"-metadatas", key, value).Result()
 }
 
-func (cache *RedisCache) InsertGroup(id string, key string, value GroupInfo) {
+func (cache *RedisCache) InsertGroup(id string, value GroupInfo) {
 	client := cache.redis
 
 	context := context.Background()
 
-	client.SAdd(context, ACCOUNT_HASH_KEY+"-"+id+"-groups", key)
+	client.SAdd(context, ACCOUNT_HASH_KEY+"-"+id+"-groups", value.Group)
 
-	client.HMSet(context, ACCOUNT_HASH_KEY+"-"+id+"-groups-"+key, map[string]interface{}{
-		"author":    value.Author,
-		"createdAt": value.CreatedAt,
-		"expireAt":  value.ExpireAt,
+	client.HMSet(context, ACCOUNT_HASH_KEY+"-"+id+"-groups-"+value.Group, map[string]interface{}{
+		"author":    value.Author.String(),
+		"createdAt": value.CreatedAt.Unix(),
+		"expireAt":  value.ExpireAt.Unix(),
 	})
 }
 
