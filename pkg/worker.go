@@ -30,7 +30,10 @@ func Initialize(db *gorm.DB) DBWorker {
 
 			for e := Queue.Front(); e != nil; e = e.Next() {
 				f := e.Value.(func(*gorm.DB))
+
 				f(worker.db)
+
+				Queue.Remove(e)
 			}
 
 			worker.db.Commit()
