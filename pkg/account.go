@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 )
 
-func New(uniqueId uuid.UUID, name string) *Account {
-	return &Account{
+func New(uniqueId uuid.UUID, name string) Account {
+	return Account{
 		UniqueId: uniqueId,
 		Name:     name,
 
@@ -83,11 +83,11 @@ type MetadataSet struct {
 	Skin         string `json:"skin" gorm:"column:skin;type:varchar(16);not null"`
 	Name         string `json:"name" gorm:"column:name;type:varchar(16);not null"`
 	Vanish       bool   `json:"vanish" gorm:"column:vanish;type:boolean;not null"`
-	CurrentGroup string `json:"currentGroup" gorm:"column:current_group;type:varchar(18);not null"`
+	CurrentGroup string `json:"current_group" gorm:"column:current_group;type:varchar(18);not null"`
 
-	SEE_ALL_PLAYERS    bool `json:"seeAllPlayers" gorm:"column:see_all_players;type:boolean;not null"`
-	ENABLE_PUBLIC_TELL bool `json:"enablePublicTell" gorm:"column:enable_public_tell;type:boolean;not null"`
-	STAFF_SCOREBOARD   bool `json:"staffScoreboard" gorm:"column:staff_scoreboard;type:boolean;not null"`
+	SEE_ALL_PLAYERS    bool `json:"see_all_players" gorm:"column:see_all_players;type:boolean;not null"`
+	ENABLE_PUBLIC_TELL bool `json:"enable_public_tell" gorm:"column:enable_public_tell;type:boolean;not null"`
+	STAFF_SCOREBOARD   bool `json:"staff_scoreboard" gorm:"column:staff_scoreboard;type:boolean;not null"`
 }
 
 type GroupInfo struct {
@@ -95,7 +95,7 @@ type GroupInfo struct {
 
 	User uuid.UUID `json:"-" gorm:"column:user;type:char(36);not null"`
 
-	Group  string    `json:"group" gorm:"column:group;type:varchar(18);not null;"`
+	Group  string    `json:"group" gorm:"column:role;type:varchar(18);not null"`
 	Author uuid.UUID `json:"author" gorm:"column:author;type:char(36);not null"`
 }
 
@@ -111,23 +111,26 @@ func IsGroup(target string) bool {
 
 func (metadataSet *MetadataSet) Write(target string, value interface{}) bool {
 	switch target {
-	case "SKIN":
+	case "skin":
 		metadataSet.Skin = value.(string)
 		return true
-	case "NAME":
+	case "name":
 		metadataSet.Name = value.(string)
 		return true
-	case "VANISH":
+	case "vanish":
 		metadataSet.Vanish, _ = value.(bool)
 		return true
-	case "SEE_ALL_PLAYERS":
+	case "see_all_players":
 		metadataSet.SEE_ALL_PLAYERS, _ = value.(bool)
 		return true
-	case "ENABLE_PUBLIC_TELL":
+	case "enable_public_tell":
 		metadataSet.ENABLE_PUBLIC_TELL, _ = value.(bool)
 		return true
-	case "STAFF_SCOREBOARD":
+	case "staff_scoreboard":
 		metadataSet.STAFF_SCOREBOARD, _ = value.(bool)
+		return true
+	case "current_group":
+		metadataSet.CurrentGroup = value.(string)
 		return true
 	default:
 		return false
