@@ -55,11 +55,9 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account = *New(uuid, fmt.Sprint(body["name"]))
+	account = New(uuid, fmt.Sprint(body["name"]))
 
 	if err := router.db.Create(&account).Error; err != nil {
-		println("Could not create account.", err.Error())
-
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Could not create account.",
 		})
@@ -113,10 +111,16 @@ func (router UserRouter) UpdateName(ctx *fiber.Ctx) error {
 
 	account := loadAccount(uniqueId, router)
 
+	if account == nil {
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "Account not found.",
+		})
+	}
+
 	account.Name = username
 
 	Do(func(d *gorm.DB) {
-		d.Save(&account)
+		d.Model(&Account{}).Where("unique_id = ?", uniqueId).Update("username", account.Name)
 	})
 
 	router.cache.UpdateName(uniqueId.String(), username)
@@ -147,10 +151,16 @@ func (router UserRouter) UpdateCash(ctx *fiber.Ctx) error {
 
 	account := loadAccount(uniqueId, router)
 
+	if account == nil {
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "Account not found.",
+		})
+	}
+
 	account.Cash = int32(cash)
 
 	Do(func(d *gorm.DB) {
-		d.Save(&account)
+		d.Model(&Account{}).Where("unique_id = ?", uniqueId).Update("cash", account.Cash)
 	})
 
 	router.cache.UpdateCash(uniqueId.String(), account.Cash)
@@ -183,6 +193,12 @@ func (router UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 
 	account := loadAccount(uniqueId, router)
 
+	if account == nil {
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "Account not found.",
+		})
+	}
+
 	metadata := account.MetadataSet
 
 	for key, value := range metadataSet {
@@ -204,14 +220,14 @@ func (router UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 			})
 		}
 
+		Do(func(d *gorm.DB) {
+			d.Model(&MetadataSet{}).Where("user = ?", uniqueId).Update(key, value)
+		})
+
 		router.cache.UpdateMetadata(uniqueId.String(), key, fmt.Sprint(value))
 	}
 
 	account.MetadataSet = metadata
-
-	Do(func(d *gorm.DB) {
-		d.Save(&account)
-	})
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
@@ -242,6 +258,12 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 	}
 
 	account := loadAccount(uniqueId, router)
+
+	if account == nil {
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "Account not found.",
+		})
+	}
 
 	groups := account.GroupSet
 
@@ -302,16 +324,14 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 
 		groups = append(groups, groupInfo)
 
+		Do(func(d *gorm.DB) {
+			d.Create(&groupInfo)
+		})
+
 		router.cache.InsertGroup(uniqueId.String(), groupInfo)
 	}
 
 	account.GroupSet = groups
-
-	Do(func(d *gorm.DB) {
-		if err := router.db.Save(&account).Error; err != nil {
-			println("Could not update account. ", err.Error())
-		}
-	})
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
@@ -365,6 +385,12 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 
 	account := loadAccount(uniqueId, router)
 
+	if account == nil {
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "Account not found.",
+		})
+	}
+
 	groups := account.GroupSet
 
 	for key, _ := range groupSet {
@@ -381,16 +407,19 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 		for i, group := range groups {
 			if group.Group == key {
 				groups = append(groups[:i], groups[i+1:]...)
+
+				Do(func(d *gorm.DB) {
+					d.Where("user = ? AND role = ?", uniqueId, key).Delete(&group)
+				})
+
+				router.cache.DeleteGroup(uniqueId.String(), key)
+
 				break
 			}
 		}
 	}
 
 	account.GroupSet = groups
-
-	Do(func(d *gorm.DB) {
-		d.Save(&account)
-	})
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
@@ -422,6 +451,12 @@ func (router UserRouter) SumCash(ctx *fiber.Ctx) error {
 
 	account := loadAccount(uniqueId, router)
 
+	if account == nil {
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "Account not found.",
+		})
+	}
+
 	account.Cash += int32(cash)
 
 	if account.Cash < 0 {
@@ -431,9 +466,7 @@ func (router UserRouter) SumCash(ctx *fiber.Ctx) error {
 	router.cache.UpdateCash(uniqueId.String(), account.Cash)
 
 	Do(func(d *gorm.DB) {
-		if err := d.Save(&account).Error; err != nil {
-			println("Could not update account.", err.Error())
-		}
+		d.Model(&Account{}).Where("unique_id = ?", uniqueId).Update("cash", account.Cash)
 	})
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -474,7 +507,7 @@ func loadAccount(uuid uuid.UUID, router UserRouter) *Account {
 		First(&account).Error
 
 	if err != nil {
-		println("Could not load account.", err.Error())
+		return nil
 	}
 
 	router.cache.SaveAccount(uuid.String(), account)
