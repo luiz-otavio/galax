@@ -26,17 +26,21 @@ func Initialize(db *gorm.DB) DBWorker {
 				continue
 			}
 
-			worker.db.Begin()
+			transaction := worker.db.Begin()
 
 			for e := Queue.Front(); e != nil; e = e.Next() {
 				f := e.Value.(func(*gorm.DB))
 
-				f(worker.db)
+				f(transaction)
 
 				Queue.Remove(e)
 			}
 
-			worker.db.Commit()
+			err := transaction.Commit().Error
+
+			if err != nil {
+				println("[DBWorker]", err.Error())
+			}
 		}
 	}()
 
