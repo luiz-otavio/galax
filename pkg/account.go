@@ -62,7 +62,7 @@ type Account struct {
 
 var AVAILABLE_GROUPS = []string{
 	"DIRECTOR",
-	"SUB-DIRECTOR",
+	"SUB_DIRECTOR",
 	"ADMIN",
 	"MODERATOR",
 	"HELPER",
