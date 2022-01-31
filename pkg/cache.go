@@ -53,12 +53,12 @@ func (cache *RedisCache) SaveAccount(id string, account *Account) {
 
 	client.HMSet(context, ACCOUNT_HASH_KEY+"-"+id+"-metadatas", map[string]interface{}{
 		"skin":             metadataSet.Skin,
-		"enablePublicTell": metadataSet.ENABLE_PUBLIC_TELL,
+		"enable_public_tell": metadataSet.ENABLE_PUBLIC_TELL,
 		"name":             metadataSet.Name,
 		"vanish":           metadataSet.Vanish,
-		"seeAllPlayers":    metadataSet.SEE_ALL_PLAYERS,
-		"staffScoreboard":  metadataSet.STAFF_SCOREBOARD,
-		"currentGroup":     metadataSet.CurrentGroup,
+		"see_all_Players":    metadataSet.SEE_ALL_PLAYERS,
+		"staff_scoreboard":  metadataSet.STAFF_SCOREBOARD,
+		"current_group":     metadataSet.CurrentGroup,
 	})
 
 	groupKey := ACCOUNT_HASH_KEY + "-" + id + "-groups"

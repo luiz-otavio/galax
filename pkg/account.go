@@ -68,10 +68,10 @@ var AVAILABLE_GROUPS = []string{
 	"HELPER",
 	"DESIGNER",
 	"BUILDER",
-	"INFLUENCER+",
+	"INFLUENCER_PLUS",
 	"INFLUENCER",
-	"MVP++",
-	"MVP+",
+	"MVP_PLUS_PLUS",
+	"MVP_PLUS",
 	"MVP",
 	"VIP",
 	"NORMAL",
@@ -177,8 +177,8 @@ func (info *MetadataSet) Read(data map[string]string) {
 
 	info.Vanish, _ = strconv.ParseBool(data["vanish"])
 
-	info.SEE_ALL_PLAYERS, _ = strconv.ParseBool(data["seeAllPlayers"])
-	info.ENABLE_PUBLIC_TELL, _ = strconv.ParseBool(data["enablePublicTell"])
-	info.STAFF_SCOREBOARD, _ = strconv.ParseBool(data["staffScoreboard"])
-	info.CurrentGroup = data["currentGroup"]
+	info.SEE_ALL_PLAYERS, _ = strconv.ParseBool(data["see_all_players"])
+	info.ENABLE_PUBLIC_TELL, _ = strconv.ParseBool(data["enable_public_tell"])
+	info.STAFF_SCOREBOARD, _ = strconv.ParseBool(data["staff_scoreboard"])
+	info.CurrentGroup = data["current_group"]
 }
