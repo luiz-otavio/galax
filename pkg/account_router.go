@@ -294,15 +294,6 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 			})
 		}
 
-		expireAt, _ := strconv.ParseInt(fmt.Sprint(info["expire_at"]), 10, 64)
-		createdAt, _ := strconv.ParseInt(fmt.Sprint(info["created_at"]), 10, 64)
-
-		if expireAt < createdAt {
-			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"message": "Expire at is not valid.",
-			})
-		}
-
 		uuid, err := uuid.Parse(author)
 
 		if err != nil {
@@ -310,6 +301,9 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 				"message": "Author is not valid.",
 			})
 		}
+
+		expireAt, _ := strconv.ParseInt(fmt.Sprint(info["expire_at"]), 10, 64)
+		createdAt, _ := strconv.ParseInt(fmt.Sprint(info["created_at"]), 10, 64)
 
 		groupInfo := GroupInfo{
 			ExpiredTimestamp: ExpiredTimestamp{
@@ -347,11 +341,19 @@ func (router UserRouter) DeleteAccount(ctx *fiber.Ctx) error {
 
 	account := loadAccount(uniqueId, router)
 
-	if err := router.db.Delete(&account).Error; err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"message": "Could not delete account.",
+	if account == nil {
+		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "Account not found.",
 		})
 	}
+
+	Do(func(d *gorm.DB) {
+		d.Where("user = ?", uniqueId).Delete(&GroupInfo{})
+
+		d.Where("user = ?", uniqueId).Delete(&MetadataSet{})
+
+		d.Delete(&account)
+	})
 
 	router.cache.DeleteAccount(account)
 
