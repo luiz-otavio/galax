@@ -300,10 +300,22 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 
 		author := fmt.Sprint(info["author"])
 
-		if author == "" || len(author) < 32 {
+		if author != "" || len(author) < 32 {
 			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"message": "Author is not valid.",
 			})
+		}
+
+		if author == "" {
+			username := fmt.Sprint(info["username"])
+
+			if username == "" || len(username) > 16 {
+				return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+					"message": "Username is not valid.",
+				})
+			}
+
+			author = OfflinePlayerUUID(username).String()
 		}
 
 		uuid, err := uuid.Parse(author)
