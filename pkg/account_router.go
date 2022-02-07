@@ -2,7 +2,6 @@ package galax
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -31,12 +30,25 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
+	name := fmt.Sprint(body["name"])
+
+	if len(name) == 0 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Name is required.",
+		})
+	}
+
 	uniqueId := fmt.Sprint(body["uniqueId"])
 
-	if len(uniqueId) == 0 || len(uniqueId) < 32 {
+	if uniqueId != "" && len(uniqueId) < 32 {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Unique id is required.",
+			"message": "Unique id is not valid.",
 		})
+	}
+
+	if uniqueId == "" {
+		uniqueId = OfflinePlayerUUID(name).
+			String()
 	}
 
 	var account Account
@@ -55,7 +67,7 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account = New(uuid, fmt.Sprint(body["name"]))
+	account = New(uuid, name)
 
 	if err := router.db.Create(&account).Error; err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -302,13 +314,13 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 			})
 		}
 
-		expireAt, _ := strconv.ParseInt(fmt.Sprint(info["expire_at"]), 10, 64)
-		createdAt, _ := strconv.ParseInt(fmt.Sprint(info["created_at"]), 10, 64)
+		expireAt, _ := info["expire_at"].(float64)
+		createdAt, _ := info["created_at"].(float64)
 
 		groupInfo := GroupInfo{
 			ExpiredTimestamp: ExpiredTimestamp{
-				ExpireAt:  expireAt,
-				CreatedAt: createdAt,
+				ExpireAt:  int64(expireAt),
+				CreatedAt: int64(createdAt),
 			},
 
 			User:   account.UniqueId,
@@ -395,7 +407,7 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 
 	groups := account.GroupSet
 
-	for key, _ := range groupSet {
+	for key := range groupSet {
 		if !IsGroup(key) {
 			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"message": "Group set is not valid.",
@@ -479,9 +491,14 @@ func (router UserRouter) SumCash(ctx *fiber.Ctx) error {
 func queryUUID(ctx *fiber.Ctx) (uuid.UUID, error) {
 	id := ctx.Query("id")
 
-	if len(id) == 0 || len(id) < 32 {
+	if id != "" && len(id) < 16 {
+		id = OfflinePlayerUUID(id).
+			String()
+	}
+
+	if id == "" || len(id) < 32 {
 		return uuid.Nil, ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Unique id is required.",
+			"message": "Unique ID is required.",
 		})
 	}
 

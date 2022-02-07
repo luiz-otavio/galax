@@ -1,6 +1,7 @@
 package galax
 
 import (
+	"crypto/md5"
 	"strconv"
 	"strings"
 	"time"
@@ -14,14 +15,14 @@ func New(uniqueId uuid.UUID, name string) Account {
 		Name:     name,
 
 		MetadataSet: MetadataSet{
-			User:               uniqueId,
-			Skin:               "",
-			Name:               "",
-			CurrentGroup:       "NORMAL",
-			Vanish:             false,
-			SEE_ALL_PLAYERS:    true,
-			ENABLE_PUBLIC_TELL: true,
-			STAFF_SCOREBOARD:   false,
+			User:             uniqueId,
+			Skin:             "",
+			Name:             "",
+			CurrentGroup:     "NORMAL",
+			Vanish:           false,
+			SeeAllPlayers:    true,
+			EnablePublicTell: true,
+			StaffScoreboard:  false,
 		},
 
 		GroupSet: []GroupInfo{
@@ -85,9 +86,9 @@ type MetadataSet struct {
 	Vanish       bool   `json:"vanish" gorm:"column:vanish;type:boolean;not null"`
 	CurrentGroup string `json:"current_group" gorm:"column:current_group;type:varchar(18);not null"`
 
-	SEE_ALL_PLAYERS    bool `json:"see_all_players" gorm:"column:see_all_players;type:boolean;not null"`
-	ENABLE_PUBLIC_TELL bool `json:"enable_public_tell" gorm:"column:enable_public_tell;type:boolean;not null"`
-	STAFF_SCOREBOARD   bool `json:"staff_scoreboard" gorm:"column:staff_scoreboard;type:boolean;not null"`
+	SeeAllPlayers    bool `json:"see_all_players" gorm:"column:see_all_players;type:boolean;not null"`
+	EnablePublicTell bool `json:"enable_public_tell" gorm:"column:enable_public_tell;type:boolean;not null"`
+	StaffScoreboard  bool `json:"staff_scoreboard" gorm:"column:staff_scoreboard;type:boolean;not null"`
 }
 
 type GroupInfo struct {
@@ -121,13 +122,13 @@ func (metadataSet *MetadataSet) Write(target string, value interface{}) bool {
 		metadataSet.Vanish, _ = value.(bool)
 		return true
 	case "see_all_players":
-		metadataSet.SEE_ALL_PLAYERS, _ = value.(bool)
+		metadataSet.SeeAllPlayers, _ = value.(bool)
 		return true
 	case "enable_public_tell":
-		metadataSet.ENABLE_PUBLIC_TELL, _ = value.(bool)
+		metadataSet.EnablePublicTell, _ = value.(bool)
 		return true
 	case "staff_scoreboard":
-		metadataSet.STAFF_SCOREBOARD, _ = value.(bool)
+		metadataSet.StaffScoreboard, _ = value.(bool)
 		return true
 	case "current_group":
 		metadataSet.CurrentGroup = value.(string)
@@ -161,11 +162,11 @@ func (metadataSet *MetadataSet) ReadFrom(target string, content string) {
 	case "VANISH":
 		metadataSet.Vanish, _ = strconv.ParseBool(content)
 	case "SEE_ALL_PLAYERS":
-		metadataSet.SEE_ALL_PLAYERS, _ = strconv.ParseBool(content)
+		metadataSet.SeeAllPlayers, _ = strconv.ParseBool(content)
 	case "ENABLE_PUBLIC_TELL":
-		metadataSet.ENABLE_PUBLIC_TELL, _ = strconv.ParseBool(content)
+		metadataSet.EnablePublicTell, _ = strconv.ParseBool(content)
 	case "STAFF_SCOREBOARD":
-		metadataSet.STAFF_SCOREBOARD, _ = strconv.ParseBool(content)
+		metadataSet.StaffScoreboard, _ = strconv.ParseBool(content)
 	case "CURRENT_GROUP":
 		metadataSet.CurrentGroup = content
 	}
@@ -177,8 +178,16 @@ func (info *MetadataSet) Read(data map[string]string) {
 
 	info.Vanish, _ = strconv.ParseBool(data["vanish"])
 
-	info.SEE_ALL_PLAYERS, _ = strconv.ParseBool(data["see_all_players"])
-	info.ENABLE_PUBLIC_TELL, _ = strconv.ParseBool(data["enable_public_tell"])
-	info.STAFF_SCOREBOARD, _ = strconv.ParseBool(data["staff_scoreboard"])
+	info.SeeAllPlayers, _ = strconv.ParseBool(data["see_all_players"])
+	info.EnablePublicTell, _ = strconv.ParseBool(data["enable_public_tell"])
+	info.StaffScoreboard, _ = strconv.ParseBool(data["staff_scoreboard"])
 	info.CurrentGroup = data["current_group"]
+}
+
+func OfflinePlayerUUID(username string) uuid.UUID {
+	const version = 3 // UUID v3
+	uuid := md5.Sum([]byte("OfflinePlayer:" + username))
+	uuid[6] = (uuid[6] & 0x0f) | uint8((version&0xf)<<4)
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 variant
+	return uuid
 }
