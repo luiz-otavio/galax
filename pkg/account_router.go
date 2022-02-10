@@ -40,15 +40,13 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 
 	uniqueId := fmt.Sprint(body["uniqueId"])
 
-	if uniqueId != "" && len(uniqueId) < 32 {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Unique id is not valid.",
-		})
-	}
-
 	if uniqueId == "" {
 		uniqueId = OfflinePlayerUUID(name).
 			String()
+	} else if len(uniqueId) != 36 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid Unique ID.",
+		})
 	}
 
 	var account Account
@@ -82,14 +80,14 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 	})
 }
 
-func (router UserRouter) SearchAccount(ctx *fiber.Ctx) error {
-	uniqueId, err := queryUUID(ctx)
+func (r *UserRouter) SearchAccount(ctx *fiber.Ctx) error {
+	uniqueId, err := r.queryUUID(ctx)
 
 	if uniqueId == uuid.Nil {
 		return err
 	}
 
-	account := loadAccount(uniqueId, router)
+	account := loadAccount(uniqueId, r)
 
 	if account == nil {
 		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -100,8 +98,8 @@ func (router UserRouter) SearchAccount(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(account)
 }
 
-func (router UserRouter) UpdateName(ctx *fiber.Ctx) error {
-	uniqueId, err := queryUUID(ctx)
+func (r *UserRouter) UpdateName(ctx *fiber.Ctx) error {
+	uniqueId, err := r.queryUUID(ctx)
 
 	if uniqueId == uuid.Nil {
 		return err
@@ -121,7 +119,7 @@ func (router UserRouter) UpdateName(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account := loadAccount(uniqueId, router)
+	account := loadAccount(uniqueId, r)
 
 	if account == nil {
 		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -132,18 +130,19 @@ func (router UserRouter) UpdateName(ctx *fiber.Ctx) error {
 	account.Name = username
 
 	Do(func(d *gorm.DB) {
-		d.Model(&Account{}).Where("unique_id = ?", uniqueId).Update("username", account.Name)
+		d.Model(&Account{}).Where("unique_id = ?", uniqueId).
+			Update("username", account.Name)
 	})
 
-	router.cache.UpdateName(uniqueId.String(), username)
+	r.cache.UpdateName(uniqueId.String(), username)
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
 	})
 }
 
-func (router UserRouter) UpdateCash(ctx *fiber.Ctx) error {
-	uniqueId, err := queryUUID(ctx)
+func (r *UserRouter) UpdateCash(ctx *fiber.Ctx) error {
+	uniqueId, err := r.queryUUID(ctx)
 
 	if uniqueId == uuid.Nil {
 		return err
@@ -161,7 +160,7 @@ func (router UserRouter) UpdateCash(ctx *fiber.Ctx) error {
 		cash = 0
 	}
 
-	account := loadAccount(uniqueId, router)
+	account := loadAccount(uniqueId, r)
 
 	if account == nil {
 		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -175,15 +174,15 @@ func (router UserRouter) UpdateCash(ctx *fiber.Ctx) error {
 		d.Model(&Account{}).Where("unique_id = ?", uniqueId).Update("cash", account.Cash)
 	})
 
-	router.cache.UpdateCash(uniqueId.String(), account.Cash)
+	r.cache.UpdateCash(uniqueId.String(), account.Cash)
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
 	})
 }
 
-func (router UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
-	uniqueId, err := queryUUID(ctx)
+func (r *UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
+	uniqueId, err := r.queryUUID(ctx)
 
 	if uniqueId == uuid.Nil {
 		return err
@@ -203,7 +202,7 @@ func (router UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account := loadAccount(uniqueId, router)
+	account := loadAccount(uniqueId, r)
 
 	if account == nil {
 		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -236,7 +235,7 @@ func (router UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 			d.Model(&MetadataSet{}).Where("user = ?", uniqueId).Update(key, value)
 		})
 
-		router.cache.UpdateMetadata(uniqueId.String(), key, fmt.Sprint(value))
+		r.cache.UpdateMetadata(uniqueId.String(), key, fmt.Sprint(value))
 	}
 
 	account.MetadataSet = metadata
@@ -246,8 +245,8 @@ func (router UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 	})
 }
 
-func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
-	uniqueId, err := queryUUID(ctx)
+func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
+	uniqueId, err := r.queryUUID(ctx)
 
 	if uniqueId == uuid.Nil {
 		return err
@@ -269,7 +268,7 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account := loadAccount(uniqueId, router)
+	account := loadAccount(uniqueId, r)
 
 	if account == nil {
 		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -300,22 +299,18 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 
 		author := fmt.Sprint(info["author"])
 
-		if author != "" || len(author) < 32 {
+		if author == "" {
 			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"message": "Author is not valid.",
+				"message": "Author is required.",
 			})
 		}
 
-		if author == "" {
-			username := fmt.Sprint(info["username"])
-
-			if username == "" || len(username) > 16 {
-				return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-					"message": "Username is not valid.",
-				})
+		if len(author) <= 16 {
+			if alternative := r.checkUUID(author); alternative != uuid.Nil {
+				author = alternative.String()
+			} else {
+				author = OfflinePlayerUUID(author).String()
 			}
-
-			author = OfflinePlayerUUID(username).String()
 		}
 
 		uuid, err := uuid.Parse(author)
@@ -346,7 +341,7 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 			d.Create(&groupInfo)
 		})
 
-		router.cache.InsertGroup(uniqueId.String(), groupInfo)
+		r.cache.InsertGroup(uniqueId.String(), groupInfo)
 	}
 
 	account.GroupSet = groups
@@ -356,14 +351,14 @@ func (router UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 	})
 }
 
-func (router UserRouter) DeleteAccount(ctx *fiber.Ctx) error {
-	uniqueId, err := queryUUID(ctx)
+func (r *UserRouter) DeleteAccount(ctx *fiber.Ctx) error {
+	uniqueId, err := r.queryUUID(ctx)
 
 	if uniqueId == uuid.Nil {
 		return err
 	}
 
-	account := loadAccount(uniqueId, router)
+	account := loadAccount(uniqueId, r)
 
 	if account == nil {
 		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -379,15 +374,15 @@ func (router UserRouter) DeleteAccount(ctx *fiber.Ctx) error {
 		d.Delete(&account)
 	})
 
-	router.cache.DeleteAccount(account)
+	r.cache.DeleteAccount(account)
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account deleted.",
 	})
 }
 
-func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
-	uniqueId, err := queryUUID(ctx)
+func (r *UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
+	uniqueId, err := r.queryUUID(ctx)
 
 	if uniqueId == uuid.Nil {
 		return err
@@ -409,7 +404,7 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account := loadAccount(uniqueId, router)
+	account := loadAccount(uniqueId, r)
 
 	if account == nil {
 		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -438,7 +433,7 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 					d.Where("user = ? AND role = ?", uniqueId, key).Delete(&group)
 				})
 
-				router.cache.DeleteGroup(uniqueId.String(), key)
+				r.cache.DeleteGroup(uniqueId.String(), key)
 
 				break
 			}
@@ -452,8 +447,8 @@ func (router UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 	})
 }
 
-func (router UserRouter) SumCash(ctx *fiber.Ctx) error {
-	uniqueId, err := queryUUID(ctx)
+func (r *UserRouter) SumCash(ctx *fiber.Ctx) error {
+	uniqueId, err := r.queryUUID(ctx)
 
 	if uniqueId == uuid.Nil {
 		return err
@@ -475,7 +470,7 @@ func (router UserRouter) SumCash(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account := loadAccount(uniqueId, router)
+	account := loadAccount(uniqueId, r)
 
 	if account == nil {
 		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -489,7 +484,7 @@ func (router UserRouter) SumCash(ctx *fiber.Ctx) error {
 		account.Cash = 0
 	}
 
-	router.cache.UpdateCash(uniqueId.String(), account.Cash)
+	r.cache.UpdateCash(uniqueId.String(), account.Cash)
 
 	Do(func(d *gorm.DB) {
 		d.Model(&Account{}).Where("unique_id = ?", uniqueId).Update("cash", account.Cash)
@@ -500,10 +495,16 @@ func (router UserRouter) SumCash(ctx *fiber.Ctx) error {
 	})
 }
 
-func queryUUID(ctx *fiber.Ctx) (uuid.UUID, error) {
+func (r *UserRouter) queryUUID(ctx *fiber.Ctx) (uuid.UUID, error) {
 	id := ctx.Query("id")
 
-	if id != "" && len(id) < 16 {
+	if id != "" && len(id) <= 16 {
+		alternative := r.checkUUID(id)
+
+		if alternative != uuid.Nil {
+			return alternative, nil
+		}
+
 		id = OfflinePlayerUUID(id).
 			String()
 	}
@@ -525,7 +526,7 @@ func queryUUID(ctx *fiber.Ctx) (uuid.UUID, error) {
 	return uniqueId, nil
 }
 
-func loadAccount(uuid uuid.UUID, router UserRouter) *Account {
+func loadAccount(uuid uuid.UUID, router *UserRouter) *Account {
 	account := router.cache.LoadAccount(uuid)
 
 	if account != nil {
@@ -544,6 +545,18 @@ func loadAccount(uuid uuid.UUID, router UserRouter) *Account {
 	router.cache.SaveAccount(uuid.String(), account)
 
 	return account
+}
+
+func (r *UserRouter) checkUUID(username string) uuid.UUID {
+	var unique_id string
+
+	if err := r.db.Model(&Account{}).Select("unique_id").
+		Where("username = ?", username).
+		Row().Scan(&unique_id); err != nil {
+		return uuid.Nil
+	}
+
+	return uuid.MustParse(unique_id)
 }
 
 func hasGroup(account *Account, group string) bool {

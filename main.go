@@ -45,6 +45,8 @@ func main() {
 	app.Patch("/account/cash/update", router.UpdateCash)
 	app.Patch("/account/cash/sum", router.SumCash)
 
+	println("Listening on port 5896!")
+
 	app.Listen(":5896")
 }
 
