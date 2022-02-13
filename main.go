@@ -6,6 +6,7 @@ import (
 
 	galax "github.com/Rede-Legit/galax/pkg"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/keyauth/v2"
 )
 
 var (
@@ -29,6 +30,12 @@ func main() {
 		ReduceMemoryUsage: true,
 		AppName:           "galax",
 	})
+
+	app.Use(keyauth.New(keyauth.Config{
+		Validator: func(ctx *fiber.Ctx, key string) (bool, error) {
+			return key == LEGIT_API_KEY, nil
+		},
+	}))
 
 	cache := galax.NewCache(client)
 	router := galax.NewRouter(connector.Database, cache)
