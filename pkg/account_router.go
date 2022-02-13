@@ -30,22 +30,24 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
-	name := fmt.Sprint(body["name"])
+	name := body["name"].(string)
 
-	if len(name) == 0 {
+	if name == "" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"message": "Name is required.",
 		})
 	}
 
-	uniqueId := fmt.Sprint(body["uniqueId"])
+	uniqueId, _ := body["unique_id"].(string)
 
-	if uniqueId == "" {
+	if len(uniqueId) == 0 {
 		uniqueId = OfflinePlayerUUID(name).
 			String()
-	} else if len(uniqueId) != 36 {
+	}
+
+	if len(uniqueId) < 32 || len(uniqueId) > 36 {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Invalid Unique ID.",
+			"message": "Invalid Unique id.",
 		})
 	}
 
