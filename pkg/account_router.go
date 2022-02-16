@@ -38,6 +38,12 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
+	if err := router.db.Where("username = ?", name).First(&Account{}).Error; err == nil {
+		return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"message": "Account already exists.",
+		})
+	}
+
 	uniqueId, _ := body["unique_id"].(string)
 
 	if len(uniqueId) == 0 {
