@@ -503,6 +503,20 @@ func (r *UserRouter) SumCash(ctx *fiber.Ctx) error {
 	})
 }
 
+func (r *UserRouter) Query(ctx *fiber.Ctx) error {
+	username := ctx.Query("id")
+
+	if username == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Username is required.",
+		})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"UUID": OfflinePlayerUUID(username).String(),
+	})
+}
+
 func (r *UserRouter) queryUUID(ctx *fiber.Ctx) (uuid.UUID, error) {
 	id := ctx.Query("id")
 
