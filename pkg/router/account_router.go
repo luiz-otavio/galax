@@ -1,6 +1,7 @@
 package galax
 
 import (
+	"crypto/md5"
 	"fmt"
 	"time"
 
@@ -51,7 +52,7 @@ func (router *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 	uniqueId, _ := body["unique_id"].(string)
 
 	if len(uniqueId) == 0 {
-		uniqueId = OfflinePlayerUUID(name).
+		uniqueId = offlineUUID(name).
 			String()
 	}
 
@@ -327,7 +328,7 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 			if alternative := r.checkUUID(author); alternative != uuid.Nil {
 				author = alternative.String()
 			} else {
-				author = OfflinePlayerUUID(author).String()
+				author = offlineUUID(author).String()
 			}
 		}
 
@@ -344,11 +345,12 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 
 		groupInfo := GroupInfo{
 			ExpiredTimestamp: ExpiredTimestamp{
-				ExpireAt:  time.Unix(int64(expireAt), 0),
-				CreatedAt: time.Unix(int64(createdAt), 0),
+				ExpireAt:  int64(expireAt),
+				CreatedAt: int64(createdAt),
 			},
 
-			User:   account.UniqueId,
+			User: account.UniqueId,
+
 			Group:  key,
 			Author: uuid,
 		}
@@ -523,7 +525,7 @@ func (r *UserRouter) Query(ctx *fiber.Ctx) error {
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"UUID": OfflinePlayerUUID(username).String(),
+		"UUID": offlineUUID(username).String(),
 	})
 }
 
@@ -537,7 +539,7 @@ func (r *UserRouter) queryUUID(ctx *fiber.Ctx) (uuid.UUID, error) {
 			return alternative, nil
 		}
 
-		id = OfflinePlayerUUID(id).
+		id = offlineUUID(id).
 			String()
 	}
 
@@ -584,7 +586,8 @@ func (r *UserRouter) checkUUID(username string) uuid.UUID {
 
 	if err := r.db.Model(&Account{}).Select("unique_id").
 		Where("username = ?", username).
-		Row().Scan(&unique_id); err != nil {
+		Row().
+		Scan(&unique_id); err != nil {
 		return uuid.Nil
 	}
 
@@ -606,10 +609,7 @@ func (r *UserRouter) ensureGroups(account *Account) *Account {
 		UnixMilli()
 
 	for index, group := range account.GroupSet {
-		millis := group.ExpireAt.
-			UnixMilli()
-
-		if millis == 0 || millis > now {
+		if group.ExpireAt == 0 || group.ExpireAt > now {
 			continue
 		}
 
@@ -623,4 +623,12 @@ func (r *UserRouter) ensureGroups(account *Account) *Account {
 	}
 
 	return account
+}
+
+func offlineUUID(username string) uuid.UUID {
+	const version = 3 // UUID v3
+	uuid := md5.Sum([]byte("OfflinePlayer:" + username))
+	uuid[6] = (uuid[6] & 0x0f) | uint8((version&0xf)<<4)
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 variant
+	return uuid
 }
