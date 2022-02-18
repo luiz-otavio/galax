@@ -3,7 +3,6 @@ package galax
 import (
 	"crypto/md5"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,30 +24,25 @@ func New(uniqueId uuid.UUID, name string) Account {
 			StaffScoreboard:  false,
 		},
 
-		GroupSet: []GroupInfo{
-			{
-				ExpiredTimestamp: ExpiredTimestamp{
-					ExpireAt:  time.Now().Unix(),
-					CreatedAt: time.Now().Unix(),
-				},
+		GroupSet: make([]GroupInfo, 0),
 
-				User:   uniqueId,
-				Group:  "NORMAL",
-				Author: uniqueId,
-			},
+		Timestamp: Timestamp{
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
 		},
+
 		Cash: 0,
 	}
 }
 
 type Timestamp struct {
-	UpdatedAt int64 `json:"updated_at" gorm:"column:updated_at;type:bigint;not null"`
-	CreatedAt int64 `json:"created_at" gorm:"column:created_at;type:bigint;not null"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	CreatedAt time.Time `json:"created_at" gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
 }
 
 type ExpiredTimestamp struct {
-	ExpireAt  int64 `json:"expire_at" gorm:"column:expire_at;type:bigint;not null"`
-	CreatedAt int64 `json:"created_at" gorm:"column:created_at;type:bigint;not null"`
+	ExpireAt  time.Time `json:"expire_at" gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	CreatedAt time.Time `json:"created_at" gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
 }
 
 type Account struct {
@@ -57,26 +51,10 @@ type Account struct {
 	Name string `json:"name" gorm:"type:varchar(16);not null;column:username"`
 	Cash int32  `json:"cash" gorm:"type:bigint;not null;default:0"`
 
-	GroupSet    []GroupInfo `json:"group_set" gorm:"foreignkey:User;references:UniqueId"`
-	MetadataSet MetadataSet `json:"metadata_set" gorm:"foreignkey:User;references:UniqueId"`
-}
+	GroupSet    []GroupInfo `json:"group_set" gorm:"foreingKey:User"`
+	MetadataSet MetadataSet `json:"metadata_set" gorm:"foreingKey:User"`
 
-var AVAILABLE_GROUPS = []string{
-	"DIRECTOR",
-	"SUB_DIRECTOR",
-	"ADMIN",
-	"MODERATOR",
-	"HELPER",
-	"DESIGNER",
-	"BUILDER",
-	"INFLUENCER_PLUS",
-	"INFLUENCER",
-	"BETA",
-	"MVP_PLUS_PLUS",
-	"MVP_PLUS",
-	"MVP",
-	"VIP",
-	"NORMAL",
+	Timestamp Timestamp `gorm:"embedded"`
 }
 
 type MetadataSet struct {
@@ -85,6 +63,7 @@ type MetadataSet struct {
 	Skin         string `json:"skin" gorm:"column:skin;type:varchar(16);not null"`
 	Name         string `json:"name" gorm:"column:name;type:varchar(16);not null"`
 	Vanish       bool   `json:"vanish" gorm:"column:vanish;type:boolean;not null"`
+	Flying       bool   `json:"flying" gorm:"column:flying;type:boolean;not null"`
 	CurrentGroup string `json:"current_group" gorm:"column:current_group;type:varchar(18);not null"`
 
 	SeeAllPlayers    bool `json:"see_all_players" gorm:"column:see_all_players;type:boolean;not null"`
@@ -101,15 +80,15 @@ type GroupInfo struct {
 	Author uuid.UUID `json:"author" gorm:"column:author;type:char(36);not null"`
 }
 
-func IsGroup(target string) bool {
-	for _, value := range AVAILABLE_GROUPS {
-		if strings.EqualFold(value, target) {
-			return true
-		}
-	}
+// func IsGroup(target string) bool {
+// 	for _, value := range AVAILABLE_GROUPS {
+// 		if strings.EqualFold(value, target) {
+// 			return true
+// 		}
+// 	}
 
-	return false
-}
+// 	return false
+// }
 
 func (metadataSet *MetadataSet) Write(target string, value interface{}) bool {
 	switch target {
@@ -145,31 +124,12 @@ func ReadInfo(id uuid.UUID, group string, data map[string]string) GroupInfo {
 
 	return GroupInfo{
 		ExpiredTimestamp: ExpiredTimestamp{
-			CreatedAt: updatedAt,
-			ExpireAt:  expireAt,
+			CreatedAt: time.Unix(updatedAt, 0),
+			ExpireAt:  time.Unix(expireAt, 0),
 		},
 		User:   id,
 		Group:  group,
 		Author: uuid.MustParse(data["author"]),
-	}
-}
-
-func (metadataSet *MetadataSet) ReadFrom(target string, content string) {
-	switch target {
-	case "SKIN":
-		metadataSet.Skin = content
-	case "NAME":
-		metadataSet.Name = content
-	case "VANISH":
-		metadataSet.Vanish, _ = strconv.ParseBool(content)
-	case "SEE_ALL_PLAYERS":
-		metadataSet.SeeAllPlayers, _ = strconv.ParseBool(content)
-	case "ENABLE_PUBLIC_TELL":
-		metadataSet.EnablePublicTell, _ = strconv.ParseBool(content)
-	case "STAFF_SCOREBOARD":
-		metadataSet.StaffScoreboard, _ = strconv.ParseBool(content)
-	case "CURRENT_GROUP":
-		metadataSet.CurrentGroup = content
 	}
 }
 

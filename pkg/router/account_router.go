@@ -2,7 +2,11 @@ package galax
 
 import (
 	"fmt"
+	"time"
 
+	. "github.com/Rede-Legit/galax/pkg"
+	"github.com/Rede-Legit/galax/pkg/repository"
+	. "github.com/Rede-Legit/galax/pkg/worker"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -11,10 +15,10 @@ import (
 
 type UserRouter struct {
 	db    *gorm.DB
-	cache *RedisCache
+	cache *repository.RedisCache
 }
 
-func NewRouter(db *gorm.DB, cache *RedisCache) *UserRouter {
+func NewRouter(db *gorm.DB, cache *repository.RedisCache) *UserRouter {
 	return &UserRouter{
 		db:    db,
 		cache: cache,
@@ -116,7 +120,9 @@ func (r *UserRouter) UpdateName(ctx *fiber.Ctx) error {
 	var body map[string]interface{}
 
 	if err := ctx.BodyParser(&body); err != nil {
-		panic(err)
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Could not parse body.",
+		})
 	}
 
 	username := fmt.Sprint(body["name"])
@@ -159,7 +165,9 @@ func (r *UserRouter) UpdateCash(ctx *fiber.Ctx) error {
 	var body map[string]interface{}
 
 	if err := ctx.BodyParser(&body); err != nil {
-		panic(err)
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Could not parse body.",
+		})
 	}
 
 	cash := body["cash"].(float64)
@@ -199,7 +207,9 @@ func (r *UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 	var body map[string]interface{}
 
 	if err := ctx.BodyParser(&body); err != nil {
-		panic(err)
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Could not parse body.",
+		})
 	}
 
 	metadataSet, ok := body["metadata_set"].(map[string]interface{})
@@ -264,7 +274,7 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 
 	if err := ctx.BodyParser(&body); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Body is required.",
+			"message": "Could not parse body.",
 		})
 	}
 
@@ -287,11 +297,11 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 	groups := account.GroupSet
 
 	for key, group := range groupSet {
-		if !IsGroup(key) {
-			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"message": "Group set is not valid.",
-			})
-		}
+		// if !IsGroup(key) {
+		// 	return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		// 		"message": "Group set is not valid.",
+		// 	})
+		// }
 
 		if hasGroup(account, key) {
 			continue
@@ -334,8 +344,8 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 
 		groupInfo := GroupInfo{
 			ExpiredTimestamp: ExpiredTimestamp{
-				ExpireAt:  int64(expireAt),
-				CreatedAt: int64(createdAt),
+				ExpireAt:  time.Unix(int64(expireAt), 0),
+				CreatedAt: time.Unix(int64(createdAt), 0),
 			},
 
 			User:   account.UniqueId,
@@ -400,7 +410,7 @@ func (r *UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 
 	if err := ctx.BodyParser(&body); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Body is required.",
+			"message": "Could not parse body.",
 		})
 	}
 
@@ -423,11 +433,11 @@ func (r *UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 	groups := account.GroupSet
 
 	for key := range groupSet {
-		if !IsGroup(key) {
-			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"message": "Group set is not valid.",
-			})
-		}
+		// if !IsGroup(key) {
+		// 	return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		// 		"message": "Group set is not valid.",
+		// 	})
+		// }
 
 		if !hasGroup(account, key) {
 			continue
@@ -466,7 +476,7 @@ func (r *UserRouter) SumCash(ctx *fiber.Ctx) error {
 
 	if err := ctx.BodyParser(&body); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Body is required.",
+			"message": "Could not parse body.",
 		})
 	}
 
@@ -552,7 +562,7 @@ func loadAccount(uuid uuid.UUID, router *UserRouter) *Account {
 	account := router.cache.LoadAccount(uuid)
 
 	if account != nil {
-		return account
+		return router.ensureGroups(account)
 	}
 
 	err := router.db.
@@ -566,7 +576,7 @@ func loadAccount(uuid uuid.UUID, router *UserRouter) *Account {
 
 	router.cache.SaveAccount(uuid.String(), account)
 
-	return account
+	return router.ensureGroups(account)
 }
 
 func (r *UserRouter) checkUUID(username string) uuid.UUID {
@@ -589,4 +599,28 @@ func hasGroup(account *Account, group string) bool {
 	}
 
 	return false
+}
+
+func (r *UserRouter) ensureGroups(account *Account) *Account {
+	now := time.Now().
+		UnixMilli()
+
+	for index, group := range account.GroupSet {
+		millis := group.ExpireAt.
+			UnixMilli()
+
+		if millis == 0 || millis > now {
+			continue
+		}
+
+		account.GroupSet = append(account.GroupSet[:index], account.GroupSet[index+1:]...)
+
+		Do(func(d *gorm.DB) {
+			d.Where("user = ? AND role = ?", account.UniqueId.String(), group.Group).Delete(&group)
+		})
+
+		r.cache.DeleteGroup(account.UniqueId.String(), group.Group)
+	}
+
+	return account
 }

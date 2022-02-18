@@ -4,7 +4,12 @@ import (
 	"fmt"
 	"os"
 
-	galax "github.com/Rede-Legit/galax/pkg"
+	. "github.com/Rede-Legit/galax/pkg"
+	. "github.com/Rede-Legit/galax/pkg/connector"
+	. "github.com/Rede-Legit/galax/pkg/repository"
+	. "github.com/Rede-Legit/galax/pkg/router"
+	. "github.com/Rede-Legit/galax/pkg/worker"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/keyauth/v2"
 )
@@ -16,10 +21,10 @@ var (
 )
 
 func main() {
-	connector := galax.NewConnector(DSN_MARIADB)
-	client := galax.NewRedis(DSN_REDIS)
+	connector := NewConnector(DSN_MARIADB)
+	client := NewRedis(DSN_REDIS)
 
-	err := connector.Database.AutoMigrate(&galax.Account{}, &galax.GroupInfo{}, &galax.MetadataSet{})
+	err := connector.Database.AutoMigrate(&Account{}, &GroupInfo{}, &MetadataSet{})
 
 	if err != nil {
 		panic(err)
@@ -37,10 +42,10 @@ func main() {
 		},
 	}))
 
-	cache := galax.NewCache(client)
-	router := galax.NewRouter(connector.Database, cache)
+	cache := NewCache(client)
+	router := NewRouter(connector.Database, cache)
 
-	galax.Initialize(connector.Database)
+	Initialize(connector.Database)
 
 	app.Put("/account/create", router.CreateAccount)
 	app.Get("/account/search", router.SearchAccount)

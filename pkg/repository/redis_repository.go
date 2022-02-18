@@ -1,10 +1,11 @@
-package galax
+package repository
 
 import (
 	"context"
 	"strconv"
-	"time"
 
+	. "github.com/Rede-Legit/galax/pkg"
+	"github.com/Rede-Legit/galax/pkg/util"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 )
@@ -17,7 +18,7 @@ const (
 	BLANK_STRING     = ""
 	ACCOUNT_HASH_KEY = "accounts"
 
-	ACCOUNT_EXPIRE_TIME = 300 * time.Second
+	ACCOUNT_EXPIRE_TIME = 300
 )
 
 func NewCache(redis *redis.Client) *RedisCache {
@@ -45,8 +46,10 @@ func (cache *RedisCache) SaveAccount(id string, account *Account) {
 	context := context.Background()
 
 	client.HMSet(context, ACCOUNT_HASH_KEY+"-"+id, map[string]interface{}{
-		"name": account.Name,
-		"cash": account.Cash,
+		"name":      account.Name,
+		"cash":      account.Cash,
+		"createdAt": account.Timestamp.CreatedAt,
+		"updatedAt": account.Timestamp.UpdatedAt,
 	})
 
 	metadataSet := account.MetadataSet
@@ -71,7 +74,13 @@ func (cache *RedisCache) SaveAccount(id string, account *Account) {
 			"createdAt": group.CreatedAt,
 			"expireAt":  group.ExpireAt,
 		})
+
+		client.Expire(context, groupKey+"-"+group.Group, ACCOUNT_EXPIRE_TIME)
 	}
+
+	client.Expire(context, ACCOUNT_HASH_KEY+"-"+id, ACCOUNT_EXPIRE_TIME)
+	client.Expire(context, ACCOUNT_HASH_KEY+"-"+id+"-metadatas", ACCOUNT_EXPIRE_TIME)
+	client.Expire(context, groupKey, ACCOUNT_EXPIRE_TIME)
 }
 
 func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
@@ -83,7 +92,7 @@ func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
 	result, err := client.HGetAll(context, ACCOUNT_HASH_KEY+"-"+uniqueId).Result()
 
 	if err != nil {
-		panic(err)
+		util.Log(err)
 	}
 
 	if len(result) == 0 {
@@ -104,7 +113,7 @@ func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
 		hash, err := client.HGetAll(context, ACCOUNT_HASH_KEY+"-"+uniqueId+"-groups-"+key).Result()
 
 		if err != nil {
-			panic(err)
+			util.Log(err)
 		}
 
 		groupSet = append(groupSet, ReadInfo(uuid, key, hash))

@@ -1,9 +1,10 @@
-package galax
+package worker
 
 import (
 	"container/list"
 	"time"
 
+	"github.com/Rede-Legit/galax/pkg/util"
 	"gorm.io/gorm"
 )
 
@@ -39,7 +40,7 @@ func Initialize(db *gorm.DB) DBWorker {
 			err := transaction.Commit().Error
 
 			if err != nil {
-				println("[DBWorker]", err.Error())
+				util.Log(err)
 			}
 		}
 	}()

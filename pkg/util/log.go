@@ -1,8 +1,8 @@
-package galax
+package util
 
 import "os"
 
-func log(err error) {
+func Log(err error) {
 	println("[ERROR]", err)
 
 	file := "log.txt"

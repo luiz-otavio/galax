@@ -1,6 +1,7 @@
-package galax
+package connector
 
 import (
+	"github.com/Rede-Legit/galax/pkg/util"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -15,17 +16,7 @@ func NewConnector(dsn string) *DBConnector {
 	}), &gorm.Config{})
 
 	if err != nil {
-		panic(err)
-	}
-
-	database, err := db.DB()
-
-	if err != nil {
-		panic(err)
-	}
-
-	if database.Ping() != nil {
-		panic("Could not connect to database")
+		util.Log(err)
 	}
 
 	return &DBConnector{Database: db}
