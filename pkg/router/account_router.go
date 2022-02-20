@@ -229,8 +229,6 @@ func (r *UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 		})
 	}
 
-	metadata := account.MetadataSet
-
 	for key, value := range metadataSet {
 		if len(key) == 0 {
 			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -244,20 +242,12 @@ func (r *UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 			})
 		}
 
-		if !metadata.Write(key, value) {
-			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"message": "Metadata key is not valid.",
-			})
-		}
-
 		Do(func(d *gorm.DB) {
-			d.Model(&MetadataSet{}).Where("user = ?", uniqueId).Update(key, value)
+			d.Model(&MetadataSet{}).Where("user = ?", uniqueId).Update(key, ParseType(key, value))
 		})
 
 		r.cache.UpdateMetadata(uniqueId.String(), key, fmt.Sprint(value))
 	}
-
-	account.MetadataSet = metadata
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
@@ -295,15 +285,7 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 		})
 	}
 
-	groups := account.GroupSet
-
 	for key, group := range groupSet {
-		// if !IsGroup(key) {
-		// 	return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-		// 		"message": "Group set is not valid.",
-		// 	})
-		// }
-
 		if hasGroup(account, key) {
 			continue
 		}
@@ -343,11 +325,22 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 		expireAt, _ := info["expire_at"].(float64)
 		createdAt, _ := info["created_at"].(float64)
 
+		var expiredTimestamp ExpiredTimestamp
+
+		if expireAt == 0 {
+			expiredTimestamp = ExpiredTimestamp{
+				ExpireAt:  time.Time{},
+				CreatedAt: time.Unix(int64(createdAt), 0).In(COUNTRY),
+			}
+		} else {
+			expiredTimestamp = ExpiredTimestamp{
+				ExpireAt:  time.Unix(int64(expireAt), 0).In(COUNTRY),
+				CreatedAt: time.Unix(int64(createdAt), 0).In(COUNTRY),
+			}
+		}
+
 		groupInfo := GroupInfo{
-			ExpiredTimestamp: ExpiredTimestamp{
-				ExpireAt:  int64(expireAt),
-				CreatedAt: int64(createdAt),
-			},
+			ExpiredTimestamp: expiredTimestamp,
 
 			User: account.UniqueId,
 
@@ -355,17 +348,12 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 			Author: uuid,
 		}
 
-		groups = append(groups, groupInfo)
-
 		Do(func(d *gorm.DB) {
 			d.Create(&groupInfo)
 		})
 
 		r.cache.InsertGroup(uniqueId.String(), groupInfo)
 	}
-
-	account.GroupSet = groups
-
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
 	})
@@ -435,20 +423,12 @@ func (r *UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 	groups := account.GroupSet
 
 	for key := range groupSet {
-		// if !IsGroup(key) {
-		// 	return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-		// 		"message": "Group set is not valid.",
-		// 	})
-		// }
-
 		if !hasGroup(account, key) {
 			continue
 		}
 
-		for i, group := range groups {
+		for _, group := range groups {
 			if group.Group == key {
-				groups = append(groups[:i], groups[i+1:]...)
-
 				Do(func(d *gorm.DB) {
 					d.Where("user = ? AND role = ?", uniqueId, key).Delete(&group)
 				})
@@ -459,8 +439,6 @@ func (r *UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 			}
 		}
 	}
-
-	account.GroupSet = groups
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
@@ -605,22 +583,23 @@ func hasGroup(account *Account, group string) bool {
 }
 
 func (r *UserRouter) ensureGroups(account *Account) *Account {
-	now := time.Now().
-		UnixMilli()
+	groupSet := account.GroupSet
 
-	for index, group := range account.GroupSet {
-		if group.ExpireAt == 0 || group.ExpireAt > now {
-			continue
+	now := time.Now()
+
+	for _, group := range groupSet {
+		expireAt := group.ExpireAt
+
+		if expireAt.Before(now) && !expireAt.IsZero() {
+			Do(func(d *gorm.DB) {
+				d.Where("user = ? AND role = ?", account.UniqueId, group.Group).Delete(&group)
+			})
+
+			r.cache.DeleteGroup(account.UniqueId.String(), group.Group)
 		}
-
-		account.GroupSet = append(account.GroupSet[:index], account.GroupSet[index+1:]...)
-
-		Do(func(d *gorm.DB) {
-			d.Where("user = ? AND role = ?", account.UniqueId.String(), group.Group).Delete(&group)
-		})
-
-		r.cache.DeleteGroup(account.UniqueId.String(), group.Group)
 	}
+
+	account = r.cache.LoadAccount(account.UniqueId)
 
 	return account
 }

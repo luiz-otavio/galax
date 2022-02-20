@@ -7,8 +7,12 @@ import (
 	"github.com/google/uuid"
 )
 
+var (
+	COUNTRY = time.UTC
+)
+
 func New(uniqueId uuid.UUID, name string) Account {
-	now := time.Now().UnixMilli()
+	now := time.Now().In(COUNTRY)
 
 	return Account{
 		UniqueId: uniqueId,
@@ -29,13 +33,13 @@ func New(uniqueId uuid.UUID, name string) Account {
 }
 
 type Timestamp struct {
-	UpdatedAt int64 `json:"updated_at" gorm:"column:updated_at;type:bigint;not null;default:0"`
-	CreatedAt int64 `json:"created_at" gorm:"column:created_at;type:bigint;not null;default:0"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 type ExpiredTimestamp struct {
-	ExpireAt  int64 `json:"expire_at" gorm:"column:created_at;type:bigint;not null;default:0"`
-	CreatedAt int64 `json:"created_at" gorm:"column:created_at;type:bigint;not null;default:0"`
+	ExpireAt  time.Time `json:"expire_at" gorm:"column:expire_at;not null;default:CURRENT_TIMESTAMP();"`
+	CreatedAt time.Time `json:"created_at" gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP();"`
 }
 
 type Account struct {
@@ -44,10 +48,10 @@ type Account struct {
 	Name string `json:"name" gorm:"type:varchar(16);not null;column:username"`
 	Cash int32  `json:"cash" gorm:"type:bigint;not null;default:0"`
 
-	GroupSet    []GroupInfo `json:"group_set" gorm:"foreingKey:User"`
-	MetadataSet MetadataSet `json:"metadata_set" gorm:"foreingKey:User"`
+	GroupSet    []GroupInfo `json:"group_set" gorm:"foreignkey:User;references:UniqueId"`
+	MetadataSet MetadataSet `json:"metadata_set" gorm:"foreignkey:User;references:UniqueId"`
 
-	Timestamp Timestamp `gorm:"embedded"`
+	Timestamp
 }
 
 type MetadataSet struct {
@@ -83,29 +87,33 @@ type GroupInfo struct {
 // 	return false
 // }
 
-func (metadataSet *MetadataSet) Write(target string, value interface{}) bool {
-	switch target {
+func ParseType(key string, value interface{}) interface{} {
+	switch key {
 	case "skin":
-		metadataSet.Skin = value.(string)
-		return true
+		return value.(string)
 	case "name":
-		metadataSet.Name = value.(string)
-		return true
+		return value.(string)
 	case "vanish":
-		metadataSet.Vanish, _ = value.(bool)
-		return true
-	case "see_all_players":
-		metadataSet.SeeAllPlayers, _ = value.(bool)
-		return true
-	case "enable_public_tell":
-		metadataSet.EnablePublicTell, _ = value.(bool)
-		return true
+		target, _ := strconv.ParseBool(value.(string))
+
+		return target
+	case "flying":
+		target, _ := strconv.ParseBool(value.(string))
+
+		return target
 	case "current_group":
-		metadataSet.CurrentGroup = value.(string)
-		return true
-	default:
-		return false
+		return value.(string)
+	case "see_all_players":
+		target, _ := strconv.ParseBool(value.(string))
+
+		return target
+	case "enable_public_tell":
+		target, _ := strconv.ParseBool(value.(string))
+
+		return target
 	}
+
+	return value
 }
 
 func ReadInfo(id uuid.UUID, group string, data map[string]string) GroupInfo {
@@ -114,11 +122,14 @@ func ReadInfo(id uuid.UUID, group string, data map[string]string) GroupInfo {
 
 	return GroupInfo{
 		ExpiredTimestamp: ExpiredTimestamp{
-			CreatedAt: int64(createdAt),
-			ExpireAt:  int64(expireAt),
+			CreatedAt: time.Unix(int64(createdAt), 0).In(COUNTRY),
+			ExpireAt:  time.Unix(int64(expireAt), 0).In(COUNTRY),
 		},
 
-		User:  id,
+		User: id,
+
+		Author: uuid.MustParse(data["author"]),
+
 		Group: group,
 	}
 }

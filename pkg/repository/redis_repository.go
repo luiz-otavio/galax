@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"strconv"
+	"time"
 
 	. "github.com/Rede-Legit/galax/pkg"
 	"github.com/Rede-Legit/galax/pkg/util"
@@ -15,10 +16,8 @@ type RedisCache struct {
 }
 
 const (
-	BLANK_STRING     = ""
-	ACCOUNT_HASH_KEY = "accounts"
-
-	ACCOUNT_EXPIRE_TIME = 300
+	ACCOUNT_HASH_KEY    = "accounts"
+	ACCOUNT_EXPIRE_TIME = time.Duration(5) * time.Minute
 )
 
 func NewCache(redis *redis.Client) *RedisCache {
@@ -48,8 +47,8 @@ func (cache *RedisCache) SaveAccount(id string, account *Account) {
 	client.HMSet(context, ACCOUNT_HASH_KEY+"-"+id, map[string]interface{}{
 		"name":      account.Name,
 		"cash":      account.Cash,
-		"createdAt": account.Timestamp.CreatedAt,
-		"updatedAt": account.Timestamp.UpdatedAt,
+		"createdAt": account.Timestamp.CreatedAt.Unix(),
+		"updatedAt": account.Timestamp.UpdatedAt.Unix(),
 	})
 
 	metadataSet := account.MetadataSet
@@ -71,8 +70,8 @@ func (cache *RedisCache) SaveAccount(id string, account *Account) {
 
 		client.HMSet(context, groupKey+"-"+group.Group, map[string]interface{}{
 			"author":    group.Author.String(),
-			"createdAt": group.CreatedAt,
-			"expireAt":  group.ExpireAt,
+			"createdAt": group.CreatedAt.Unix(),
+			"expireAt":  group.ExpireAt.Unix(),
 		})
 
 		client.Expire(context, groupKey+"-"+group.Group, ACCOUNT_EXPIRE_TIME)
@@ -119,6 +118,9 @@ func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
 		groupSet = append(groupSet, ReadInfo(uuid, key, hash))
 	}
 
+	createdAt, _ := strconv.ParseInt(result["createdAt"], 10, 64)
+	updatedAt, _ := strconv.ParseInt(result["updatedAt"], 10, 64)
+
 	return &Account{
 		UniqueId: uuid,
 		Name:     result["name"],
@@ -127,6 +129,11 @@ func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
 
 		MetadataSet: metadataSet,
 		GroupSet:    groupSet,
+
+		Timestamp: Timestamp{
+			CreatedAt: time.Unix(createdAt, 0).In(COUNTRY),
+			UpdatedAt: time.Unix(updatedAt, 0).In(COUNTRY),
+		},
 	}
 }
 
@@ -147,8 +154,8 @@ func (cache *RedisCache) InsertGroup(id string, value GroupInfo) {
 
 	client.HMSet(context, ACCOUNT_HASH_KEY+"-"+id+"-groups-"+value.Group, map[string]interface{}{
 		"author":    value.Author.String(),
-		"createdAt": value.CreatedAt,
-		"expireAt":  value.ExpireAt,
+		"createdAt": value.CreatedAt.Unix(),
+		"expireAt":  value.ExpireAt.Unix(),
 	})
 }
 
