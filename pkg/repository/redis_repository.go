@@ -58,7 +58,7 @@ func (cache *RedisCache) SaveAccount(id string, account *Account) {
 		"enable_public_tell": metadataSet.EnablePublicTell,
 		"name":               metadataSet.Name,
 		"vanish":             metadataSet.Vanish,
-		"see_all_Players":    metadataSet.SeeAllPlayers,
+		"see_all_players":    metadataSet.SeeAllPlayers,
 		"flying":             metadataSet.Flying,
 		"current_group":      metadataSet.CurrentGroup,
 	})
