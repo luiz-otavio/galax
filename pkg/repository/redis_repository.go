@@ -131,8 +131,8 @@ func (cache *RedisCache) LoadAccount(uuid uuid.UUID) *Account {
 		GroupSet:    groupSet,
 
 		Timestamp: Timestamp{
-			CreatedAt: time.Unix(createdAt, 0),
-			UpdatedAt: time.Unix(updatedAt, 0),
+			CreatedAt: time.Unix(createdAt, 0).In(time.UTC),
+			UpdatedAt: time.Unix(updatedAt, 0).In(time.UTC),
 		},
 	}
 }

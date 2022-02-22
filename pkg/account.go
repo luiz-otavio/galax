@@ -7,13 +7,9 @@ import (
 	"github.com/google/uuid"
 )
 
-var (
-	COUNTRY = time.UTC
-)
-
 func New(uniqueId uuid.UUID, name string) Account {
 	now := time.Now().
-		In(COUNTRY)
+		In(time.UTC)
 
 	return Account{
 		UniqueId: uniqueId,
@@ -78,16 +74,6 @@ type GroupInfo struct {
 	Author uuid.UUID `json:"author" gorm:"column:author;type:char(36);not null"`
 }
 
-// func IsGroup(target string) bool {
-// 	for _, value := range AVAILABLE_GROUPS {
-// 		if strings.EqualFold(value, target) {
-// 			return true
-// 		}
-// 	}
-
-// 	return false
-// }
-
 func ParseType(key string, value interface{}) interface{} {
 	switch key {
 	case "skin":
@@ -123,8 +109,8 @@ func ReadInfo(id uuid.UUID, group string, data map[string]string) GroupInfo {
 
 	return GroupInfo{
 		ExpiredTimestamp: ExpiredTimestamp{
-			CreatedAt: time.Unix(int64(createdAt), 0),
-			ExpireAt:  time.Unix(int64(expireAt), 0),
+			CreatedAt: time.Unix(int64(createdAt), 0).In(time.UTC),
+			ExpireAt:  time.Unix(int64(expireAt), 0).In(time.UTC),
 		},
 
 		User: id,

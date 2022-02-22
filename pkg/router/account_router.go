@@ -327,8 +327,8 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 
 		groupInfo := GroupInfo{
 			ExpiredTimestamp: ExpiredTimestamp{
-				ExpireAt:  time.Unix(int64(expireAt), 0),
-				CreatedAt: time.Unix(int64(createdAt), 0),
+				ExpireAt:  time.Unix(int64(expireAt), 0).In(time.UTC),
+				CreatedAt: time.Unix(int64(createdAt), 0).In(time.UTC),
 			},
 
 			User: account.UniqueId,
