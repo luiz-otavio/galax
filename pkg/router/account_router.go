@@ -325,22 +325,11 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 		expireAt, _ := info["expire_at"].(float64)
 		createdAt, _ := info["created_at"].(float64)
 
-		var expiredTimestamp ExpiredTimestamp
-
-		if expireAt == 0 {
-			expiredTimestamp = ExpiredTimestamp{
-				ExpireAt:  time.Time{},
-				CreatedAt: time.Unix(int64(createdAt), 0).In(COUNTRY),
-			}
-		} else {
-			expiredTimestamp = ExpiredTimestamp{
-				ExpireAt:  time.Unix(int64(expireAt), 0).In(COUNTRY),
-				CreatedAt: time.Unix(int64(createdAt), 0).In(COUNTRY),
-			}
-		}
-
 		groupInfo := GroupInfo{
-			ExpiredTimestamp: expiredTimestamp,
+			ExpiredTimestamp: ExpiredTimestamp{
+				ExpireAt:  time.Unix(int64(expireAt), 0),
+				CreatedAt: time.Unix(int64(createdAt), 0),
+			},
 
 			User: account.UniqueId,
 
@@ -587,19 +576,23 @@ func (r *UserRouter) ensureGroups(account *Account) *Account {
 
 	now := time.Now()
 
-	for _, group := range groupSet {
-		expireAt := group.ExpireAt
+	for target := 0; target < len(groupSet); target++ {
+		group := groupSet[target]
 
-		if expireAt.Before(now) && !expireAt.IsZero() {
-			Do(func(d *gorm.DB) {
-				d.Where("user = ? AND role = ?", account.UniqueId, group.Group).Delete(&group)
-			})
-
-			r.cache.DeleteGroup(account.UniqueId.String(), group.Group)
+		if group.ExpireAt.IsZero() || group.ExpireAt.Second() == 0 || group.ExpireAt.After(now) {
+			continue
 		}
+
+		groupSet = append(groupSet[:target], groupSet[target+1:]...)
+
+		Do(func(d *gorm.DB) {
+			d.Where("user = ? AND role = ?", account.UniqueId, group.Group).Delete(&group)
+		})
+
+		r.cache.DeleteGroup(account.UniqueId.String(), group.Group)
 	}
 
-	account = r.cache.LoadAccount(account.UniqueId)
+	account.GroupSet = groupSet
 
 	return account
 }

@@ -12,7 +12,8 @@ var (
 )
 
 func New(uniqueId uuid.UUID, name string) Account {
-	now := time.Now().In(COUNTRY)
+	now := time.Now().
+		In(COUNTRY)
 
 	return Account{
 		UniqueId: uniqueId,
@@ -122,8 +123,8 @@ func ReadInfo(id uuid.UUID, group string, data map[string]string) GroupInfo {
 
 	return GroupInfo{
 		ExpiredTimestamp: ExpiredTimestamp{
-			CreatedAt: time.Unix(int64(createdAt), 0).In(COUNTRY),
-			ExpireAt:  time.Unix(int64(expireAt), 0).In(COUNTRY),
+			CreatedAt: time.Unix(int64(createdAt), 0),
+			ExpireAt:  time.Unix(int64(expireAt), 0),
 		},
 
 		User: id,
