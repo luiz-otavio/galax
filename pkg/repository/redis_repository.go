@@ -61,6 +61,7 @@ func (cache *RedisCache) SaveAccount(id string, account *Account) {
 		"see_all_players":    metadataSet.SeeAllPlayers,
 		"flying":             metadataSet.Flying,
 		"current_group":      metadataSet.CurrentGroup,
+		"staff_chat":         metadataSet.StaffChat,
 	})
 
 	groupKey := ACCOUNT_HASH_KEY + "-" + id + "-groups"

@@ -62,6 +62,7 @@ type MetadataSet struct {
 
 	SeeAllPlayers    bool `json:"see_all_players" gorm:"column:see_all_players;type:boolean;not null"`
 	EnablePublicTell bool `json:"enable_public_tell" gorm:"column:enable_public_tell;type:boolean;not null"`
+	StaffChat        bool `json:"staff_chat" gorm:"column:staff_chat;type:boolean;not null"`
 	// StaffScoreboard  bool `json:"staff_scoreboard" gorm:"column:staff_scoreboard;type:boolean;not null"`
 }
 
@@ -98,6 +99,10 @@ func ParseType(key string, value interface{}) interface{} {
 		target, _ := strconv.ParseBool(value.(string))
 
 		return target
+	case "staff_chat":
+		target, _ := strconv.ParseBool(value.(string))
+
+		return target
 	}
 
 	return value
@@ -131,4 +136,5 @@ func (info *MetadataSet) Read(data map[string]string) {
 
 	info.SeeAllPlayers, _ = strconv.ParseBool(data["see_all_players"])
 	info.EnablePublicTell, _ = strconv.ParseBool(data["enable_public_tell"])
+	info.StaffChat, _ = strconv.ParseBool(data["staff_chat"])
 }
