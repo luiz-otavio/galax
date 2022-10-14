@@ -1,0 +1,25 @@
+[logging]
+debug=true
+
+[api]
+key=""
+
+[mysql]
+dsn=""
+
+[redis]
+dsn=""
+
+# Should be in seconds.
+interval=300
+
+# Key to store accounts in redis
+key="accounts"
+
+[server]
+binding=":5896"
+
+[worker]
+parallelism=1
+interval=1
+iterations=128
