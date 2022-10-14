@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"time"
 
-	"github.com/Rede-Legit/galax/pkg/util"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -40,7 +40,7 @@ func Initialize(db *gorm.DB) DBWorker {
 			err := transaction.Commit().Error
 
 			if err != nil {
-				util.Log(err)
+				log.Error().Err(err).Msg("Found an issue with the worker commit.")
 			}
 		}
 	}()
