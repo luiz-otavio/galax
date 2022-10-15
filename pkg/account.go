@@ -1,16 +1,12 @@
 package galax
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 func New(uniqueId uuid.UUID, name string) Account {
-	now := time.Now().
-		In(time.UTC)
-
 	return Account{
 		UniqueId: uniqueId,
 		Name:     name,
@@ -23,8 +19,8 @@ func New(uniqueId uuid.UUID, name string) Account {
 		},
 
 		Timestamp: Timestamp{
-			CreatedAt: now,
-			UpdatedAt: now,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
 		},
 	}
 }
@@ -51,6 +47,20 @@ type Account struct {
 	Timestamp
 }
 
+func (account *Account) GetUniqueId() string {
+	return account.UniqueId.String()
+}
+
+func (account *Account) HasGroupSet(group string) bool {
+	for _, g := range account.GroupSet {
+		if g.Group == group {
+			return true
+		}
+	}
+
+	return false
+}
+
 type MetadataSet struct {
 	User uuid.UUID `json:"-" gorm:"column:user;type:char(36);not null"`
 
@@ -63,7 +73,6 @@ type MetadataSet struct {
 	SeeAllPlayers    bool `json:"see_all_players" gorm:"column:see_all_players;type:boolean;not null"`
 	EnablePublicTell bool `json:"enable_public_tell" gorm:"column:enable_public_tell;type:boolean;not null"`
 	StaffChat        bool `json:"staff_chat" gorm:"column:staff_chat;type:boolean;not null"`
-	// StaffScoreboard  bool `json:"staff_scoreboard" gorm:"column:staff_scoreboard;type:boolean;not null"`
 }
 
 type GroupInfo struct {
@@ -73,68 +82,4 @@ type GroupInfo struct {
 
 	Group  string    `json:"group" gorm:"column:role;type:varchar(18);not null"`
 	Author uuid.UUID `json:"author" gorm:"column:author;type:char(36);not null"`
-}
-
-func ParseType(key string, value interface{}) interface{} {
-	switch key {
-	case "skin":
-		return value.(string)
-	case "name":
-		return value.(string)
-	case "vanish":
-		target, _ := strconv.ParseBool(value.(string))
-
-		return target
-	case "flying":
-		target, _ := strconv.ParseBool(value.(string))
-
-		return target
-	case "current_group":
-		return value.(string)
-	case "see_all_players":
-		target, _ := strconv.ParseBool(value.(string))
-
-		return target
-	case "enable_public_tell":
-		target, _ := strconv.ParseBool(value.(string))
-
-		return target
-	case "staff_chat":
-		target, _ := strconv.ParseBool(value.(string))
-
-		return target
-	}
-
-	return value
-}
-
-func ReadInfo(id uuid.UUID, group string, data map[string]string) GroupInfo {
-	createdAt, _ := strconv.ParseInt(data["createdAt"], 10, 64)
-	expireAt, _ := strconv.ParseInt(data["expireAt"], 10, 64)
-
-	return GroupInfo{
-		ExpiredTimestamp: ExpiredTimestamp{
-			CreatedAt: time.Unix(int64(createdAt), 0).In(time.UTC),
-			ExpireAt:  time.Unix(int64(expireAt), 0).In(time.UTC),
-		},
-
-		User: id,
-
-		Author: uuid.MustParse(data["author"]),
-
-		Group: group,
-	}
-}
-
-func (info *MetadataSet) Read(data map[string]string) {
-	info.Skin = data["skin"]
-	info.Name = data["name"]
-	info.CurrentGroup = data["current_group"]
-
-	info.Vanish, _ = strconv.ParseBool(data["vanish"])
-	info.Flying, _ = strconv.ParseBool(data["flying"])
-
-	info.SeeAllPlayers, _ = strconv.ParseBool(data["see_all_players"])
-	info.EnablePublicTell, _ = strconv.ParseBool(data["enable_public_tell"])
-	info.StaffChat, _ = strconv.ParseBool(data["staff_chat"])
 }

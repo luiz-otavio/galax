@@ -1,33 +1,40 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
-	. "github.com/Rede-Legit/galax/pkg"
-	. "github.com/Rede-Legit/galax/pkg/connector"
-	. "github.com/Rede-Legit/galax/pkg/repository"
-	. "github.com/Rede-Legit/galax/pkg/router"
-	. "github.com/Rede-Legit/galax/pkg/worker"
+	galax "github.com/Rede-Legit/galax/pkg"
+	"github.com/Rede-Legit/galax/pkg/config"
+	connector "github.com/Rede-Legit/galax/pkg/connector"
+	"github.com/Rede-Legit/galax/pkg/repository"
+	"github.com/Rede-Legit/galax/pkg/router"
+	"github.com/Rede-Legit/galax/pkg/worker"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/keyauth/v2"
 )
 
-var (
-	LEGIT_API_KEY = env("LEGIT_API_KEY")
-	DSN_REDIS     = env("DSN_REDIS")
-	DSN_MARIADB   = env("DSN_MARIADB")
-)
-
 func main() {
-	connector := NewConnector(DSN_MARIADB)
-	client := NewRedis(DSN_REDIS)
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	log.Logger = zerolog.New(zerolog.ConsoleWriter{
+		Out: os.Stderr,
+	}).With().Timestamp().Logger()
 
-	err := connector.Database.AutoMigrate(&Account{}, &GroupInfo{}, &MetadataSet{})
+	config, err := config.Load("./config.toml")
 
 	if err != nil {
-		panic(err)
+		log.Fatal().Err(err).Msg("Cannot decode TOML file for configuration.")
+		return
+	}
+
+	gorm := connector.NewConnector(config.GetMySQL())
+	client := connector.NewRedis(config.GetRedis())
+
+	if err = gorm.AutoMigrate(&galax.Account{}, &galax.GroupInfo{}, &galax.MetadataSet{}); err != nil {
+		log.Fatal().Err(err).Msg("Cannot auto migrate sources to database")
+		return
 	}
 
 	app := fiber.New(fiber.Config{
@@ -38,14 +45,18 @@ func main() {
 
 	app.Use(keyauth.New(keyauth.Config{
 		Validator: func(ctx *fiber.Ctx, key string) (bool, error) {
-			return key == LEGIT_API_KEY, nil
+			if config.GetDebug() {
+				log.Debug().Msg("Income request from " + ctx.IP())
+			}
+
+			return key == config.GetKey(), nil
 		},
 	}))
 
-	cache := NewCache(client)
-	router := NewRouter(connector.Database, cache)
+	cache := repository.NewCache(client, config)
+	router := router.NewRouter(gorm, cache, config)
 
-	Initialize(connector.Database)
+	worker.Initialize(gorm)
 
 	app.Put("/account/create", router.CreateAccount)
 	app.Get("/account/search", router.SearchAccount)
@@ -58,17 +69,9 @@ func main() {
 	app.Patch("/account/cash/sum", router.SumCash)
 	app.Get("/query", router.Query)
 
-	println("Listening on port 5896!")
+	log.Info().Msg("Initializing the listening port...")
 
-	app.Listen(":5896")
-}
+	app.Listen(config.GetBinding())
 
-func env(key string) string {
-	value := os.Getenv(key)
-
-	if value == "" {
-		panic(fmt.Sprintf("%s is not set", key))
-	}
-
-	return value
+	log.Info().Msg("Started to listen in " + config.GetBinding() + " port!")
 }
