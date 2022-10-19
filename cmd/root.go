@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/Rede-Legit/galax/pkg/config"
 	"github.com/rs/zerolog/log"
 )
@@ -14,6 +17,8 @@ func Execute() {
 		log.Fatal().Err(err).Msg("Cannot decode TOML file for configuration.")
 		return
 	}
+
+	os.Setenv("GALAX_DEBUGGING", fmt.Sprint(config.GetDebug()))
 
 	log.Info().Msg("Loaded configuration successfully.")
 	log.Info().Msg("Starting connectors...")
