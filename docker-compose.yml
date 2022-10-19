@@ -1,0 +1,16 @@
+# Initialize those services with mariadb and redis
+services:
+  mariadb:
+    image: mariadb:latest
+    restart: always
+    environment:
+      MARIADB_USER: galax
+      MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: 'yes'
+      MARIADB_PASSWORD: root
+      MARIADB_DATABASE: galax
+    ports:
+      - 3306:3306
+  redis:
+    image: redis:latest
+    ports:
+      - 6379:6379
