@@ -1,39 +1,53 @@
 package router
 
 import (
-	"crypto/md5"
+	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"time"
 
-	galax "github.com/Rede-Legit/galax/pkg"
-	"github.com/Rede-Legit/galax/pkg/config"
+	galax "github.com/Rede-Legit/galax/pkg/data"
 	"github.com/Rede-Legit/galax/pkg/repository"
 	"github.com/Rede-Legit/galax/pkg/util"
 	worker "github.com/Rede-Legit/galax/pkg/worker"
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-type UserRouter struct {
+type AccountRouter interface {
+	WebRouter
+
+	CreateAccount(ctx *fiber.Ctx) error
+	SearchAccount(ctx *fiber.Ctx) error
+	UpdateCash(ctx *fiber.Ctx) error
+	AddCash(ctx *fiber.Ctx) error
+	TakeCash(ctx *fiber.Ctx) error
+	UpdateMetadata(ctx *fiber.Ctx) error
+	AddGroup(ctx *fiber.Ctx) error
+	RemoveGroup(ctx *fiber.Ctx) error
+}
+
+type accountRouterImpl struct {
 	db     *gorm.DB
-	cache  *repository.RedisCache
-	config *config.Config
+	cache  repository.RedisRepository
+	worker worker.Worker
 }
 
-func NewRouter(db *gorm.DB, cache *repository.RedisCache, config *config.Config) *UserRouter {
-	return &UserRouter{
-		db:     db,
-		cache:  cache,
-		config: config,
-	}
+func (r *accountRouterImpl) TakeEndpoints(router fiber.Router) {
+	router.Put("/create", r.CreateAccount)
+	router.Get("/search", r.SearchAccount)
+	router.Patch("/metadata", r.UpdateMetadata)
+	router.Delete("/group", r.RemoveGroup)
+	router.Post("/group", r.AddGroup)
+	router.Patch("/cash/update", r.UpdateCash)
+	router.Patch("/cash/sum", r.AddCash)
+	router.Patch("/cash/take", r.TakeCash)
 }
 
-func (r *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
-	body := map[string]interface{}{}
+func (r *accountRouterImpl) CreateAccount(ctx *fiber.Ctx) error {
+	var body map[string]interface{}
 
 	if err := ctx.BodyParser(&body); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -49,9 +63,9 @@ func (r *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
-	r.Debug("Income request to create account for " + name)
+	util.DebugOutput("Income request for creating account with name '%s'", name)
 
-	if err := r.db.Where("username = ?", name).First(&galax.Account{}).Error; err == nil {
+	if err := r.db.Where("username = ?", name).First(galax.CreateEmptyAccount()).Error; err == nil {
 		return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"message": "Account already exists.",
 		})
@@ -60,7 +74,8 @@ func (r *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 	uniqueId, ok := body["unique_id"].(string)
 
 	if !ok || len(uniqueId) == 0 {
-		uniqueId = OfflinePlayerUUID(name).String()
+		uniqueId = util.OfflinePlayerUUID(name).
+			String()
 	}
 
 	if len(uniqueId) < 32 || len(uniqueId) > 36 {
@@ -77,15 +92,38 @@ func (r *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
-	uuid, err := util.ParseUUID(uniqueId)
-
-	if err != nil {
+	if util.EnsureUUID(uniqueId) {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"message": "Unique id is not valid.",
 		})
 	}
 
-	account = galax.New(uuid, name)
+	accountType, ok := body["accountType"].(string)
+
+	if !ok || len(accountType) == 0 {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Account type is required.",
+		})
+	}
+
+	targetType, err := util.ParseAccountType(accountType)
+
+	if err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Account type is invalid.",
+		})
+	}
+
+	account = galax.CreateAccount(
+		uniqueId,
+		name,
+		0,
+		targetType,
+		galax.CreateEmptyMetadataSet(),
+		[]galax.GroupInfo{},
+		time.Now(),
+		time.Now(),
+	)
 
 	if err := r.db.Create(&account).Error; err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -93,43 +131,47 @@ func (r *UserRouter) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
-	r.cache.SaveAccount(uuid.String(), &account)
+	r.cache.SaveAccount(account)
 
-	r.Debug("Created account for " + name + " with unique id " + account.GetUniqueId())
+	util.DebugOutput("Account created for %s", name)
 
 	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "Account created.",
 	})
 }
 
-func (r *UserRouter) SearchAccount(ctx *fiber.Ctx) error {
-	uniqueId, err := r.RetrieveUUID(ctx)
+func (r *accountRouterImpl) SearchAccount(ctx *fiber.Ctx) error {
+	uniqueId, err := r.FilterUUIDByQuery(ctx)
 
 	if err != nil {
 		return err
 	}
 
-	r.Debug("Income request for searching account for '" + uniqueId.String() + "' user.")
+	util.DebugOutput("Income request for searching account with '%s'", uniqueId)
 
-	account := r.LoadAccount(uniqueId)
+	account := r.cache.LoadAccount(uniqueId)
 
 	if account == nil {
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Account not found.",
-		})
+		account = r.RetrieveByDatabase(uniqueId)
+
+		if account == nil {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Account not found.",
+			})
+		}
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(account)
 }
 
-func (r *UserRouter) UpdateName(ctx *fiber.Ctx) error {
-	uniqueId, err := r.RetrieveUUID(ctx)
+func (r *accountRouterImpl) UpdateCash(ctx *fiber.Ctx) error {
+	uniqueId, err := r.FilterUUIDByQuery(ctx)
 
 	if err != nil {
 		return err
 	}
 
-	r.Debug("Income request for updating name for '" + uniqueId.String() + "' account.")
+	util.DebugOutput("Income request for updating cash for user %s.", uniqueId)
 
 	var body map[string]interface{}
 
@@ -139,90 +181,184 @@ func (r *UserRouter) UpdateName(ctx *fiber.Ctx) error {
 		})
 	}
 
-	username := fmt.Sprint(body["name"])
-
-	if len(username) == 0 {
+	if _, err = util.EnsureType(body["cash"], reflect.Float64, "cash isn't a number."); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Name is required.",
+			"message": "Cash isn't a number.",
 		})
 	}
 
-	account := r.LoadAccount(uniqueId)
-
-	if account == nil {
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Account not found.",
-		})
-	}
-
-	account.Name = username
-
-	worker.Do(func(d *gorm.DB) {
-		d.Model(&galax.Account{}).Where("unique_id = ?", uniqueId).
-			Update("username", account.Name)
-	})
-
-	r.cache.UpdateName(uniqueId.String(), username)
-
-	r.Debug("Updated name to user '" + account.GetUniqueId() + "'.")
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Account updated.",
-	})
-}
-
-func (r *UserRouter) UpdateCash(ctx *fiber.Ctx) error {
-	uniqueId, err := r.RetrieveUUID(ctx)
-
-	if err != nil {
-		return err
-	}
-
-	r.Debug("Income request for updating cash for user '" + uniqueId.String() + "'.")
-
-	var body map[string]interface{}
-
-	if err := ctx.BodyParser(&body); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Could not parse body.",
-		})
-	}
-
-	cash := body["cash"].(float64)
+	// Parse cash to int32
+	cash := int32(
+		math.Round(
+			body["cash"].(float64),
+		),
+	)
 
 	if cash < 0 {
 		cash = 0
 	}
 
-	account := r.LoadAccount(uniqueId)
+	account := r.cache.LoadAccount(uniqueId)
 
 	if account == nil {
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Account not found.",
-		})
+		account = r.RetrieveByDatabase(uniqueId)
+
+		if account == nil {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Account not found.",
+			})
+		}
 	}
 
-	account.Cash = int32(cash)
+	account.SetCash(cash)
 
-	worker.Do(func(d *gorm.DB) {
-		d.Model(&galax.Account{}).Where("unique_id = ?", uniqueId).Update("cash", account.Cash)
+	r.worker.Do(func(d *gorm.DB) {
+		d.Model(galax.CreateEmptyAccount()).
+			Where("unique_id = ?", uniqueId).
+			Update("cash", account.GetCash())
 	})
 
-	r.cache.UpdateCash(uniqueId.String(), account.Cash)
+	r.cache.UpdateCash(uniqueId, cash)
 
-	r.Debug("Updated cash for user '" + account.GetUniqueId() + "'.")
+	util.DebugOutput("Updated cash for user %s with %d", account.GetUniqueId(), account.GetCash())
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
 	})
 }
 
-func (r *UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
-	uniqueId, err := r.RetrieveUUID(ctx)
+func (r *accountRouterImpl) AddCash(ctx *fiber.Ctx) error {
+	uniqueId, err := r.FilterUUIDByQuery(ctx)
 
 	if err != nil {
 		return err
 	}
 
-	r.Debug("Income request to update metadata for user '" + uniqueId.String() + "'.")
+	util.DebugOutput("Income request for adding cash for user %s.", uniqueId)
+
+	var body map[string]interface{}
+
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Could not parse body.",
+		})
+	}
+
+	if _, err = util.EnsureType(body["cash"], reflect.Float64, "cash isn't a number."); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Cash isn't a number.",
+		})
+	}
+
+	// Parse cash to int32
+	cash := int32(
+		math.Round(
+			body["cash"].(float64),
+		),
+	)
+
+	account := r.cache.LoadAccount(uniqueId)
+
+	if account == nil {
+		account = r.RetrieveByDatabase(uniqueId)
+
+		if account == nil {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Account not found.",
+			})
+		}
+	}
+
+	if account.GetCash()+cash < 0 {
+		cash = -account.GetCash()
+	}
+
+	account.AddCash(cash)
+
+	r.worker.Do(func(d *gorm.DB) {
+		d.Model(galax.CreateEmptyAccount()).
+			Where("unique_id = ?", uniqueId).
+			Update("cash", account.GetCash())
+	})
+
+	r.cache.AddCash(uniqueId, account.GetCash())
+
+	util.DebugOutput("Added cash for user %s with %d", account.GetUniqueId(), account.GetCash())
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Account updated.",
+	})
+}
+
+func (r *accountRouterImpl) TakeCash(ctx *fiber.Ctx) error {
+	uniqueId, err := r.FilterUUIDByQuery(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	util.DebugOutput("Income request for taking cash for user %s.", uniqueId)
+
+	var body map[string]interface{}
+
+	if err := ctx.BodyParser(&body); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Could not parse body.",
+		})
+	}
+
+	if _, err = util.EnsureType(body["cash"], reflect.Float64, "cash isn't a number."); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Cash isn't a number.",
+		})
+	}
+
+	// Parse cash to int32
+	cash := int32(
+		math.Round(
+			body["cash"].(float64),
+		),
+	)
+
+	account := r.cache.LoadAccount(uniqueId)
+
+	if account == nil {
+		account = r.RetrieveByDatabase(uniqueId)
+
+		if account == nil {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Account not found.",
+			})
+		}
+	}
+
+	if account.GetCash()-cash < 0 {
+		cash = account.GetCash()
+	}
+
+	account.TakeCash(cash)
+
+	r.worker.Do(func(d *gorm.DB) {
+		d.Model(galax.CreateEmptyAccount()).
+			Where("unique_id = ?", uniqueId).
+			Update("cash", account.GetCash())
+	})
+
+	r.cache.TakeCash(uniqueId, account.GetCash())
+
+	util.DebugOutput("Taken cash for user %s with %d", account.GetUniqueId(), account.GetCash())
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Account updated.",
+	})
+}
+
+func (r *accountRouterImpl) UpdateMetadata(ctx *fiber.Ctx) error {
+	uniqueId, err := r.FilterUUIDByQuery(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	util.DebugOutput("Income request to update metadata entry for user %s", uniqueId)
 
 	var body map[string]interface{}
 
@@ -240,12 +376,16 @@ func (r *UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account := r.LoadAccount(uniqueId)
+	account := r.cache.LoadAccount(uniqueId)
 
 	if account == nil {
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Account not found.",
-		})
+		account = r.RetrieveByDatabase(uniqueId)
+
+		if account == nil {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Account not found.",
+			})
+		}
 	}
 
 	for key, value := range metadataSet {
@@ -269,29 +409,31 @@ func (r *UserRouter) UpdateMetadata(ctx *fiber.Ctx) error {
 			})
 		}
 
-		worker.Do(func(d *gorm.DB) {
-			d.Model(&galax.MetadataSet{}).Where("user = ?", uniqueId).Update(key, target)
+		r.worker.Do(func(d *gorm.DB) {
+			d.Model(galax.CreateEmptyMetadataSet()).
+				Where("user = ?", uniqueId).
+				Update(key, target)
 		})
 
-		r.Debug("Updated metadata entry with '" + key + "' key and '" + fmt.Sprint(value) + "' value.")
+		util.DebugOutput("Updated metadata entry with %s key and %s value.", key, fmt.Sprint(value))
 
-		r.cache.UpdateMetadata(uniqueId.String(), key, fmt.Sprint(value))
+		r.cache.UpdateMetadata(uniqueId, key, fmt.Sprint(value))
 	}
 
-	r.Debug("Updated metadata for account '" + account.GetUniqueId() + "'.")
+	util.DebugOutput("Updated metadata set for account %s", account.GetUniqueId())
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
 	})
 }
 
-func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
-	uniqueId, err := r.RetrieveUUID(ctx)
+func (r *accountRouterImpl) AddGroup(ctx *fiber.Ctx) error {
+	uniqueId, err := r.FilterUUIDByQuery(ctx)
 
 	if err != nil {
 		return err
 	}
 
-	r.Debug("Income request to insert group for account '" + uniqueId.String() + "'.")
+	util.DebugOutput("Income request to add group for user %s.", uniqueId)
 
 	var body map[string]interface{}
 
@@ -309,17 +451,31 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account := r.LoadAccount(uniqueId)
+	account := r.cache.LoadAccount(uniqueId)
 
 	if account == nil {
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Account not found.",
-		})
+		account = r.RetrieveByDatabase(uniqueId)
+
+		if account == nil {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Account not found.",
+			})
+		}
 	}
 
 	for key, group := range groupSet {
-		if !account.HasGroupSet(key) {
-			continue
+		groupType, err := util.ParseGroupType(key)
+
+		if err != nil {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Invalid group type: '" + key + "'.",
+			})
+		}
+
+		if !account.HasGroupSet(groupType) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Account does not have group set: '" + key + "'.",
+			})
 		}
 
 		info, ok := group.(map[string]interface{})
@@ -338,14 +494,17 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 			})
 		}
 
-		target, err := util.ParseUUID(author)
+		var target string
+		if !util.EnsureUUID(author) {
+			target, err = r.FilterByUsername(author)
 
-		if err != nil {
-			target = r.EnsureUUID(author)
-
-			if target == uuid.Nil {
-				target = OfflinePlayerUUID(author)
+			if err != nil {
+				return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+					"message": "Author is not valid.",
+				})
 			}
+		} else {
+			target = author
 		}
 
 		if err != nil {
@@ -389,73 +548,45 @@ func (r *UserRouter) InsertGroup(ctx *fiber.Ctx) error {
 		}
 
 		groupInfo := galax.GroupInfo{
-			Group:  key,
+			Group:  groupType,
 			Author: target,
 
-			User: account.UniqueId,
+			User: account.GetUniqueId(),
 
-			ExpiredTimestamp: galax.ExpiredTimestamp{
-				ExpireAt:  expireUnix,
-				CreatedAt: createdUnix,
-			},
+			ExpireAt:  expireUnix,
+			CreatedAt: createdUnix,
 		}
 
-		worker.Do(func(d *gorm.DB) {
+		r.worker.Do(func(d *gorm.DB) {
 			d.Create(&groupInfo)
 		})
 
-		r.Debug("Inserted group with '" + key + "' name with '" + author + "' author.")
+		util.DebugOutput(
+			"Added group info for account %s, group %s, author %s, expire at %d, created at %d.",
+			account.GetUniqueId(),
+			groupType,
+			target,
+			expireAt,
+			createdAt,
+		)
 
-		r.cache.InsertGroup(uniqueId.String(), groupInfo)
+		r.cache.AddGroup(account, groupInfo)
 	}
 
-	r.Debug("Group set updated for account '" + account.GetUniqueId() + "'.")
+	util.DebugOutput("Group set has updated for account %s.", account.GetUniqueId())
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
 	})
 }
 
-func (r *UserRouter) DeleteAccount(ctx *fiber.Ctx) error {
-	uniqueId, err := r.RetrieveUUID(ctx)
+func (r *accountRouterImpl) RemoveGroup(ctx *fiber.Ctx) error {
+	uniqueId, err := r.FilterUUIDByQuery(ctx)
 
 	if err != nil {
 		return err
 	}
 
-	r.Debug("Income request for deleting account from '" + uniqueId.String() + "'.")
-
-	account := r.LoadAccount(uniqueId)
-
-	if account == nil {
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Account not found.",
-		})
-	}
-
-	worker.Do(func(d *gorm.DB) {
-		d.Where("user = ?", uniqueId).Delete(&galax.GroupInfo{})
-
-		d.Where("user = ?", uniqueId).Delete(&galax.MetadataSet{})
-
-		d.Delete(&account)
-	})
-
-	r.cache.DeleteAccount(account)
-
-	r.Debug("Deleted account from user '" + account.GetUniqueId() + "'.")
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Account deleted.",
-	})
-}
-
-func (r *UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
-	uniqueId, err := r.RetrieveUUID(ctx)
-
-	if err != nil {
-		return err
-	}
-
-	r.Debug("Income request to delete group info from '" + uniqueId.String() + "' account.")
+	util.DebugOutput("Income request to remove group from account %s.", uniqueId)
 
 	var body map[string]interface{}
 
@@ -465,7 +596,7 @@ func (r *UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 		})
 	}
 
-	groupSet, ok := body["group_set"].(map[string]interface{})
+	groups, ok := body["group_set"].([]string)
 
 	if !ok {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -473,209 +604,100 @@ func (r *UserRouter) DeleteGroup(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account := r.LoadAccount(uniqueId)
+	account := r.cache.LoadAccount(uniqueId)
 
 	if account == nil {
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Account not found.",
+		account = r.RetrieveByDatabase(uniqueId)
+
+		if account == nil {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Account not found.",
+			})
+		}
+	}
+
+	for _, key := range groups {
+		groupType, err := util.ParseGroupType(key)
+
+		if err != nil {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Invalid group type: '" + key + "'.",
+			})
+		}
+
+		if !account.HasGroupSet(groupType) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Account does not have group set: '" + key + "'.",
+			})
+		}
+
+		util.DebugOutput("Removing group with %s name from %s account.", key, uniqueId)
+
+		account.RemoveGroup(groupType)
+
+		r.worker.Do(func(d *gorm.DB) {
+			d.Where("user = ? AND role = ?", uniqueId, key).Delete(&galax.GroupInfo{})
 		})
 	}
 
-	groups := account.GroupSet
-
-	for key := range groupSet {
-		if !account.HasGroupSet(key) {
-			continue
-		}
-
-		for _, group := range groups {
-			if group.Group == key {
-				r.Debug("Deleting group '" + key + "' from '" + uniqueId.String() + "' account.")
-
-				worker.Do(func(d *gorm.DB) {
-					d.Where("user = ? AND role = ?", uniqueId, key).Delete(&group)
-				})
-
-				r.cache.DeleteGroup(uniqueId.String(), key)
-
-				break
-			}
-		}
-	}
-
+	util.DebugOutput("Group set has updated for account %s.", account.GetUniqueId())
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
 	})
 }
 
-func (r *UserRouter) SumCash(ctx *fiber.Ctx) error {
-	uniqueId, err := r.RetrieveUUID(ctx)
-
-	if err != nil {
-		return err
-	}
-
-	r.Debug("Income request to sum cash from '" + uniqueId.String() + "' account.")
-
-	var body map[string]interface{}
-
-	if err := ctx.BodyParser(&body); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Could not parse body.",
-		})
-	}
-
-	cash, ok := body["cash"].(float64)
-
-	if !ok {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Cash is required.",
-		})
-	}
-
-	account := r.LoadAccount(uniqueId)
-
-	if account == nil {
-		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Account not found.",
-		})
-	}
-
-	account.Cash += int32(cash)
-
-	if account.Cash < 0 {
-		account.Cash = 0
-	}
-
-	r.cache.UpdateCash(uniqueId.String(), account.Cash)
-
-	worker.Do(func(d *gorm.DB) {
-		d.Model(&galax.Account{}).Where("unique_id = ?", uniqueId).Update("cash", account.Cash)
-	})
-
-	r.Debug("Updated account cash from '" + fmt.Sprint((account.Cash - int32(cash))) + "' to '" + fmt.Sprint(account.Cash))
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Account updated.",
-	})
-}
-
-func (r *UserRouter) Query(ctx *fiber.Ctx) error {
-	username := ctx.Query("id")
-
-	if len(username) == 0 {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Username is required.",
-		})
-	}
-
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"UUID": OfflinePlayerUUID(username).String(),
-	})
-}
-
-func (r *UserRouter) RetrieveUUID(ctx *fiber.Ctx) (uuid.UUID, error) {
+func (r *accountRouterImpl) FilterUUIDByQuery(ctx *fiber.Ctx) (string, error) {
 	id := ctx.Query("id")
 
-	if len(id) != 0 && len(id) <= 16 {
-		alternative := r.EnsureUUID(id)
+	if !util.EnsureUUID(id) {
+		new, err := r.FilterByUsername(id)
 
-		if alternative != uuid.Nil {
-			return alternative, nil
+		if err != nil {
+			return "", ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Id is not valid.",
+			})
 		}
 
-		id = OfflinePlayerUUID(id).
-			String()
+		return new, nil
 	}
 
-	if len(id) < 32 {
-		return uuid.Nil, ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Unique ID is required.",
-		})
-	}
-
-	uniqueId, err := util.ParseUUID(id)
-
-	if err != nil {
-		return uuid.Nil, ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Unique id is not valid.",
-		})
-	}
-
-	return uniqueId, nil
+	return id, nil
 }
 
-func (router *UserRouter) LoadAccount(uuid uuid.UUID) *galax.Account {
-	account := router.cache.LoadAccount(uuid)
+func (r *accountRouterImpl) RetrieveByDatabase(unique string) galax.Account {
+	account := galax.CreateEmptyAccount()
 
-	if account != nil {
-		return router.EnsureGroups(account)
-	}
-
-	err := router.db.
-		Preload(clause.Associations).
-		Where("unique_id = ?", uuid).
-		First(&account).Error
-
-	if err != nil {
+	if err := r.db.Preload(clause.Associations).Where("unique_id = ?", unique).First(&account).Error; err != nil {
 		return nil
 	}
 
-	router.cache.SaveAccount(uuid.String(), account)
-
-	return router.EnsureGroups(account)
-}
-
-func (r *UserRouter) EnsureUUID(username string) uuid.UUID {
-	var unique_id string
-
-	if err := r.db.Model(&galax.Account{}).Select("unique_id").
-		Where("username = ?", username).
-		Row().
-		Scan(&unique_id); err != nil {
-		return uuid.Nil
-	}
-
-	return uuid.MustParse(unique_id)
-}
-
-func (r *UserRouter) EnsureGroups(account *galax.Account) *galax.Account {
-	groupSet := account.GroupSet
-
-	now := time.Now()
-
-	for target := 0; target < len(groupSet); target++ {
-		group := groupSet[target]
-
-		if group.ExpireAt.IsZero() || group.ExpireAt.Second() == 0 || group.ExpireAt.After(now) {
-			continue
-		}
-
-		groupSet = append(groupSet[:target], groupSet[target+1:]...)
-
-		worker.Do(func(d *gorm.DB) {
-			d.Where("user = ? AND role = ?", account.UniqueId, group.Group).Delete(&group)
-		})
-
-		r.cache.DeleteGroup(account.UniqueId.String(), group.Group)
-	}
-
-	account.GroupSet = groupSet
+	r.cache.SaveAccount(account)
 
 	return account
 }
 
-func (r *UserRouter) Debug(message string) {
-	if !r.config.GetDebug() {
-		return
+func (r *accountRouterImpl) FilterByUsername(username string) (string, error) {
+	var unique_id string
+
+	if err := r.db.Model(galax.CreateEmptyAccount()).
+		Select("unique_id").
+		Where("username = ?", username).
+		Row().
+		Scan(&unique_id); err != nil {
+		return unique_id, nil
 	}
 
-	log.Debug().Msg(message)
+	if !util.EnsureUUID(unique_id) {
+		return "", errors.New("invalid uuid")
+	}
+
+	return unique_id, nil
 }
 
-func OfflinePlayerUUID(username string) uuid.UUID {
-	const version = 3 // UUID v3
-	uuid := md5.Sum([]byte("OfflinePlayer:" + username))
-	uuid[6] = (uuid[6] & 0x0f) | uint8((version&0xf)<<4)
-	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 variant
-	return uuid
+func CreateAccountRouter(db *gorm.DB, repository repository.RedisRepository, worker worker.Worker) AccountRouter {
+	return &accountRouterImpl{
+		db:     db,
+		cache:  repository,
+		worker: worker,
+	}
 }
