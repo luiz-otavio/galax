@@ -1,18 +1,37 @@
 #!/usr/bin/env bash
 
-# Check if docker-compose is installed
-echo "Checking if docker-compose exists"
+isCurrentVersion=false
+
+echo "Checking if docker-compose exists or not"
 if ! [ -x "$(command -v docker-compose)" ]; then
+    isCurrentVersion=true
     echo 'Error: docker-compose is not installed.' >&2
-    exit 1
 fi
 
-# Stop current docker-compose
-echo "Stopping current docker-compose"
-docker-compose down
+echo "Checking if docker is installed or not"
+if ! [ -x "$(command -v docker)" ]; then
+    isCurrentVersion=false
+    echo 'Error: docker is not installed.' >&2
+fi
 
-# Start new docker-compose
-echo "Starting new docker-compose"
-docker-compose up -d
+if [ "$isCurrentVersion" = false ] ; then
+    # Stop current docker-compose
+    echo "Stopping current docker-compose"
+    docker-compose down
 
-echo "Done"
+    # Start new docker-compose
+    echo "Starting new docker-compose"
+    docker-compose up -d
+
+    echo "Done"
+else
+    # Stop current docker-compose
+    echo "Stopping current docker compose"
+    docker compose down
+
+    # Start new docker-compose
+    echo "Starting new docker compose"
+    docker compose up -d
+
+    echo "Done"
+fi
