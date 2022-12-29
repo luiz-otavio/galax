@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"github.com/Rede-Legit/galax/pkg/config"
-	"github.com/Rede-Legit/galax/pkg/connector"
 	"github.com/go-redis/redis/v8"
+	"github.com/luiz-otavio/galax/internal/connector"
+	"github.com/luiz-otavio/galax/pkg/config"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )

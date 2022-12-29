@@ -3,7 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/Rede-Legit/galax/cmd"
+	"github.com/luiz-otavio/galax/cmd"
+
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )

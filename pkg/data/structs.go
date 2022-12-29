@@ -1,15 +1,5 @@
 package data
 
-type DataType int
-
-const (
-	LOBBY DataType = iota
-	AUTHENTICATION
-	PRISON
-	SKYWARS
-	BEDWARS
-)
-
 type AccountType string
 
 const (
@@ -34,12 +24,6 @@ const (
 	UNKNOWN   GroupType = "UNKNOWN"
 )
 
-type GalaxData struct {
-	Type DataType
-}
-
 type UUIDData struct {
-	GalaxData
-
 	UUID string `gorm:"primaryKey;type:char(36)" json:"unique_id"`
 }

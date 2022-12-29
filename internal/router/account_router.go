@@ -7,10 +7,13 @@ import (
 	"reflect"
 	"time"
 
-	galax "github.com/Rede-Legit/galax/pkg/data"
-	"github.com/Rede-Legit/galax/pkg/repository"
-	"github.com/Rede-Legit/galax/pkg/util"
-	worker "github.com/Rede-Legit/galax/pkg/worker"
+	. "github.com/luiz-otavio/galax/internal/impl"
+
+	"github.com/luiz-otavio/galax/internal/repository"
+	"github.com/luiz-otavio/galax/internal/util"
+	"github.com/luiz-otavio/galax/internal/worker"
+	"github.com/luiz-otavio/galax/pkg/data"
+
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -65,7 +68,7 @@ func (r *accountRouterImpl) CreateAccount(ctx *fiber.Ctx) error {
 
 	util.DebugOutput("Income request for creating account with name '%s'", name)
 
-	if err := r.db.Where("username = ?", name).First(galax.CreateEmptyAccount()).Error; err == nil {
+	if err := r.db.Where("username = ?", name).First(AccountImpl{}).Error; err == nil {
 		return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"message": "Account already exists.",
 		})
@@ -84,7 +87,7 @@ func (r *accountRouterImpl) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
-	var account galax.Account
+	var account AccountImpl
 
 	if err := r.db.Where("unique_id = ?", uniqueId).First(&account).Error; err == nil {
 		return ctx.Status(fiber.StatusMethodNotAllowed).JSON(fiber.Map{
@@ -114,16 +117,22 @@ func (r *accountRouterImpl) CreateAccount(ctx *fiber.Ctx) error {
 		})
 	}
 
-	account = galax.CreateAccount(
-		uniqueId,
-		name,
-		0,
-		targetType,
-		galax.CreateEmptyMetadataSet(),
-		[]galax.GroupInfo{},
-		time.Now(),
-		time.Now(),
-	)
+	account = AccountImpl{
+		UUIDData: data.UUIDData{
+			UUID: uniqueId,
+		},
+
+		AccountType: targetType,
+
+		Name: name,
+		Cash: 0,
+
+		GroupSet:    []data.GroupInfo{},
+		MetadataSet: data.MetadataSet{},
+
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
 
 	if err := r.db.Create(&account).Error; err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -134,7 +143,6 @@ func (r *accountRouterImpl) CreateAccount(ctx *fiber.Ctx) error {
 	r.cache.SaveAccount(account)
 
 	util.DebugOutput("Account created for %s", name)
-
 	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "Account created.",
 	})
@@ -148,7 +156,6 @@ func (r *accountRouterImpl) SearchAccount(ctx *fiber.Ctx) error {
 	}
 
 	util.DebugOutput("Income request for searching account with '%s'", uniqueId)
-
 	account := r.cache.LoadAccount(uniqueId)
 
 	if account == nil {
@@ -213,7 +220,7 @@ func (r *accountRouterImpl) UpdateCash(ctx *fiber.Ctx) error {
 	account.SetCash(cash)
 
 	r.worker.Do(func(d *gorm.DB) {
-		d.Model(galax.CreateEmptyAccount()).
+		d.Model(AccountImpl{}).
 			Where("unique_id = ?", uniqueId).
 			Update("cash", account.GetCash())
 	})
@@ -275,7 +282,7 @@ func (r *accountRouterImpl) AddCash(ctx *fiber.Ctx) error {
 	account.AddCash(cash)
 
 	r.worker.Do(func(d *gorm.DB) {
-		d.Model(galax.CreateEmptyAccount()).
+		d.Model(AccountImpl{}).
 			Where("unique_id = ?", uniqueId).
 			Update("cash", account.GetCash())
 	})
@@ -283,7 +290,6 @@ func (r *accountRouterImpl) AddCash(ctx *fiber.Ctx) error {
 	r.cache.AddCash(uniqueId, account.GetCash())
 
 	util.DebugOutput("Added cash for user %s with %d", account.GetUniqueId(), account.GetCash())
-
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Account updated.",
 	})
@@ -338,7 +344,7 @@ func (r *accountRouterImpl) TakeCash(ctx *fiber.Ctx) error {
 	account.TakeCash(cash)
 
 	r.worker.Do(func(d *gorm.DB) {
-		d.Model(galax.CreateEmptyAccount()).
+		d.Model(AccountImpl{}).
 			Where("unique_id = ?", uniqueId).
 			Update("cash", account.GetCash())
 	})
@@ -410,13 +416,12 @@ func (r *accountRouterImpl) UpdateMetadata(ctx *fiber.Ctx) error {
 		}
 
 		r.worker.Do(func(d *gorm.DB) {
-			d.Model(galax.CreateEmptyMetadataSet()).
+			d.Model(data.MetadataSet{}).
 				Where("user = ?", uniqueId).
 				Update(key, target)
 		})
 
 		util.DebugOutput("Updated metadata entry with %s key and %s value.", key, fmt.Sprint(value))
-
 		r.cache.UpdateMetadata(uniqueId, key, fmt.Sprint(value))
 	}
 
@@ -547,7 +552,7 @@ func (r *accountRouterImpl) AddGroup(ctx *fiber.Ctx) error {
 			})
 		}
 
-		groupInfo := galax.GroupInfo{
+		groupInfo := data.GroupInfo{
 			Group:  groupType,
 			Author: target,
 
@@ -636,7 +641,7 @@ func (r *accountRouterImpl) RemoveGroup(ctx *fiber.Ctx) error {
 		account.RemoveGroup(groupType)
 
 		r.worker.Do(func(d *gorm.DB) {
-			d.Where("user = ? AND role = ?", uniqueId, key).Delete(&galax.GroupInfo{})
+			d.Where("user = ? AND role = ?", uniqueId, key).Delete(&data.GroupInfo{})
 		})
 	}
 
@@ -664,8 +669,8 @@ func (r *accountRouterImpl) FilterUUIDByQuery(ctx *fiber.Ctx) (string, error) {
 	return id, nil
 }
 
-func (r *accountRouterImpl) RetrieveByDatabase(unique string) galax.Account {
-	account := galax.CreateEmptyAccount()
+func (r *accountRouterImpl) RetrieveByDatabase(unique string) data.Account {
+	var account AccountImpl
 
 	if err := r.db.Preload(clause.Associations).Where("unique_id = ?", unique).First(&account).Error; err != nil {
 		return nil
@@ -679,7 +684,7 @@ func (r *accountRouterImpl) RetrieveByDatabase(unique string) galax.Account {
 func (r *accountRouterImpl) FilterByUsername(username string) (string, error) {
 	var unique_id string
 
-	if err := r.db.Model(galax.CreateEmptyAccount()).
+	if err := r.db.Model(AccountImpl{}).
 		Select("unique_id").
 		Where("username = ?", username).
 		Row().

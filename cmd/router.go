@@ -4,13 +4,13 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/Rede-Legit/galax/pkg/config"
-	"github.com/Rede-Legit/galax/pkg/repository"
-	"github.com/Rede-Legit/galax/pkg/router"
-	"github.com/Rede-Legit/galax/pkg/worker"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/keyauth/v2"
+	"github.com/luiz-otavio/galax/internal/repository"
+	"github.com/luiz-otavio/galax/internal/router"
+	"github.com/luiz-otavio/galax/internal/worker"
+	"github.com/luiz-otavio/galax/pkg/config"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )

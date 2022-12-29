@@ -4,9 +4,12 @@ import (
 	"context"
 	"strconv"
 
-	config "github.com/Rede-Legit/galax/pkg/config"
-	galax "github.com/Rede-Legit/galax/pkg/data"
-	"github.com/Rede-Legit/galax/pkg/util"
+	. "github.com/luiz-otavio/galax/internal/impl"
+
+	"github.com/luiz-otavio/galax/internal/util"
+	"github.com/luiz-otavio/galax/pkg/config"
+	"github.com/luiz-otavio/galax/pkg/data"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/rs/zerolog/log"
 )
@@ -15,11 +18,11 @@ type RedisRepository interface {
 	GetRedis() *redis.Client
 	GetConfig() *config.Config
 
-	LoadAccount(uuid string) galax.Account
-	SaveAccount(account galax.Account)
+	LoadAccount(uuid string) data.Account
+	SaveAccount(account data.Account)
 
-	RemoveGroup(account galax.Account, groupInfo galax.GroupInfo)
-	AddGroup(account galax.Account, groupInfo galax.GroupInfo)
+	RemoveGroup(account data.Account, groupInfo data.GroupInfo)
+	AddGroup(account data.Account, groupInfo data.GroupInfo)
 
 	UpdateCash(uuid string, cash int32)
 	AddCash(uuid string, cash int32)
@@ -33,7 +36,7 @@ type repositoryImpl struct {
 	config *config.Config
 }
 
-func (cache *repositoryImpl) LoadAccount(uuid string) galax.Account {
+func (cache repositoryImpl) LoadAccount(uuid string) data.Account {
 	client := cache.redis
 
 	context := context.Background()
@@ -77,7 +80,7 @@ func (cache *repositoryImpl) LoadAccount(uuid string) galax.Account {
 		return nil
 	}
 
-	groupSet := []galax.GroupInfo{}
+	groupSet := []data.GroupInfo{}
 
 	for _, key := range groups {
 		hash, err := client.HGetAll(context, cache.config.GetAccountKey()+"-"+uuid+"-groups-"+key).Result()
@@ -118,19 +121,25 @@ func (cache *repositoryImpl) LoadAccount(uuid string) galax.Account {
 		return nil
 	}
 
-	return galax.CreateAccount(
-		uuid,
-		result["name"],
-		int32(cash),
-		accountType,
-		metadataSet,
-		groupSet,
-		createdAt,
-		updatedAt,
-	)
+	return AccountImpl{
+		UUIDData: data.UUIDData{
+			UUID: uuid,
+		},
+
+		AccountType: accountType,
+
+		Name: result["name"],
+		Cash: int32(cash),
+
+		GroupSet:    groupSet,
+		MetadataSet: metadataSet,
+
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+	}
 }
 
-func (cache *repositoryImpl) SaveAccount(account galax.Account) {
+func (cache repositoryImpl) SaveAccount(account data.Account) {
 	context := context.Background()
 
 	key := cache.config.GetAccountKey()
@@ -214,7 +223,7 @@ func (cache *repositoryImpl) SaveAccount(account galax.Account) {
 	}
 }
 
-func (cache *repositoryImpl) UpdateCash(uuid string, cash int32) {
+func (cache repositoryImpl) UpdateCash(uuid string, cash int32) {
 	_, err := cache.redis.HSet(context.Background(), cache.config.GetAccountKey()+"-"+uuid, "cash", cash).Result()
 
 	if err != nil {
@@ -222,7 +231,7 @@ func (cache *repositoryImpl) UpdateCash(uuid string, cash int32) {
 	}
 }
 
-func (cache *repositoryImpl) AddCash(uuid string, cash int32) {
+func (cache repositoryImpl) AddCash(uuid string, cash int32) {
 	_, err := cache.redis.HIncrBy(context.Background(), cache.config.GetAccountKey()+"-"+uuid, "cash", int64(cash)).Result()
 
 	if err != nil {
@@ -230,7 +239,7 @@ func (cache *repositoryImpl) AddCash(uuid string, cash int32) {
 	}
 }
 
-func (cache *repositoryImpl) TakeCash(uuid string, cash int32) {
+func (cache repositoryImpl) TakeCash(uuid string, cash int32) {
 	_, err := cache.redis.HIncrBy(context.Background(), cache.config.GetAccountKey()+"-"+uuid, "cash", int64(-cash)).Result()
 
 	if err != nil {
@@ -238,7 +247,7 @@ func (cache *repositoryImpl) TakeCash(uuid string, cash int32) {
 	}
 }
 
-func (cache *repositoryImpl) UpdateMetadata(uuid string, key string, value string) {
+func (cache repositoryImpl) UpdateMetadata(uuid string, key string, value string) {
 	_, err := cache.redis.HSet(context.Background(), cache.config.GetAccountKey()+"-"+uuid+"-metadatas", key, value).Result()
 
 	if err != nil {
@@ -246,7 +255,7 @@ func (cache *repositoryImpl) UpdateMetadata(uuid string, key string, value strin
 	}
 }
 
-func (cache *repositoryImpl) AddGroup(account galax.Account, group galax.GroupInfo) {
+func (cache repositoryImpl) AddGroup(account data.Account, group data.GroupInfo) {
 	context := context.Background()
 
 	key := cache.config.GetAccountKey()
@@ -281,7 +290,7 @@ func (cache *repositoryImpl) AddGroup(account galax.Account, group galax.GroupIn
 	}
 }
 
-func (cache *repositoryImpl) RemoveGroup(account galax.Account, group galax.GroupInfo) {
+func (cache repositoryImpl) RemoveGroup(account data.Account, group data.GroupInfo) {
 	context := context.Background()
 
 	key := cache.config.GetAccountKey()
@@ -307,16 +316,16 @@ func (cache *repositoryImpl) RemoveGroup(account galax.Account, group galax.Grou
 	}
 }
 
-func (cache *repositoryImpl) GetConfig() *config.Config {
+func (cache repositoryImpl) GetConfig() *config.Config {
 	return cache.config
 }
 
-func (cache *repositoryImpl) GetRedis() *redis.Client {
+func (cache repositoryImpl) GetRedis() *redis.Client {
 	return cache.redis
 }
 
 func CreateRedisRepository(client *redis.Client, config *config.Config) RedisRepository {
-	return &repositoryImpl{
+	return repositoryImpl{
 		redis:  client,
 		config: config,
 	}

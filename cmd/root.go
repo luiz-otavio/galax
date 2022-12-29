@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Rede-Legit/galax/pkg/config"
+	"github.com/luiz-otavio/galax/pkg/config"
 	"github.com/rs/zerolog/log"
 )
 

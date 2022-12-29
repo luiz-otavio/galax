@@ -1,4 +1,4 @@
-module github.com/Rede-Legit/galax
+module github.com/luiz-otavio/galax
 
 go 1.18
 
