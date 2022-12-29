@@ -90,7 +90,7 @@ func (r *accountRouterImpl) CreateAccount(ctx *fiber.Ctx) error {
 	var account AccountImpl
 
 	if err := r.db.Where("unique_id = ?", uniqueId).First(&account).Error; err == nil {
-		return ctx.Status(fiber.StatusMethodNotAllowed).JSON(fiber.Map{
+		return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"message": "Account already exists.",
 		})
 	}

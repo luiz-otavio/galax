@@ -66,7 +66,7 @@ func (r authRouterImpl) Register(ctx *fiber.Ctx) error {
 	var authentication AuthenticationImpl
 
 	if err := r.db.Where("username = ?", request.GetUsername()).First(&authentication).Error; err == nil {
-		return ctx.Status(fiber.StatusPreconditionFailed).JSON(fiber.Map{
+		return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"error": "Username is already taken",
 		})
 	}
@@ -88,7 +88,7 @@ func (r authRouterImpl) Register(ctx *fiber.Ctx) error {
 		})
 	}
 
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "Successfully registered",
 	})
 }
