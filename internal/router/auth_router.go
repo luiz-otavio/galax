@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 
 	. "github.com/luiz-otavio/galax/internal/impl"
@@ -83,6 +84,8 @@ func (r authRouterImpl) Register(ctx *fiber.Ctx) error {
 	authentication.UpdatePassword(authentication.Password)
 
 	if err := r.db.Create(&authentication).Error; err != nil {
+		log.Error().Err(err).Msg("Cannot create the authentication")
+
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Cannot create the authentication",
 		})

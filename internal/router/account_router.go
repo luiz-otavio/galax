@@ -8,6 +8,7 @@ import (
 	"time"
 
 	. "github.com/luiz-otavio/galax/internal/impl"
+	"github.com/rs/zerolog/log"
 
 	"github.com/luiz-otavio/galax/internal/repository"
 	"github.com/luiz-otavio/galax/internal/util"
@@ -135,6 +136,8 @@ func (r *accountRouterImpl) CreateAccount(ctx *fiber.Ctx) error {
 	}
 
 	if err := r.db.Create(&account).Error; err != nil {
+		log.Error().Err(err).Msg("Could not create account.")
+
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Could not create account.",
 		})
@@ -689,7 +692,7 @@ func (r *accountRouterImpl) FilterByUsername(username string) (string, error) {
 		Where("username = ?", username).
 		Row().
 		Scan(&unique_id); err != nil {
-		return unique_id, nil
+		return unique_id, err
 	}
 
 	if !util.EnsureUUID(unique_id) {
