@@ -1,4 +1,5 @@
-# Initialize those services with mariadb and redis
+version: '3.8'
+
 services:
   mariadb:
     image: mariadb:latest
